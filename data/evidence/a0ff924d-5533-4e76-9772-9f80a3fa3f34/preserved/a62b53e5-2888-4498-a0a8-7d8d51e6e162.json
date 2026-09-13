@@ -1,0 +1,68 @@
+{
+  "events": [
+    {
+      "event_type": "download",
+      "user": "victim",
+      "file": "invoice_update.exe",
+      "url": "http://malicious-cdn.example.com/invoice_update.exe",
+      "host": "HOST-01",
+      "timestamp": "2026-09-10T09:00:00Z"
+    },
+    {
+      "event_type": "file_created",
+      "file": "invoice_update.exe",
+      "path": "C:\\Users\\victim\\AppData\\Local\\Temp\\invoice_update.exe",
+      "host": "HOST-01",
+      "timestamp": "2026-09-10T09:00:05Z"
+    },
+    {
+      "event_type": "process_started",
+      "process": "invoice_update.exe",
+      "pid": 4321,
+      "path": "C:\\Users\\victim\\AppData\\Local\\Temp\\invoice_update.exe",
+      "user": "victim",
+      "host": "HOST-01",
+      "timestamp": "2026-09-10T09:00:10Z"
+    },
+    {
+      "event_type": "connection",
+      "pid": 4321,
+      "process": "invoice_update.exe",
+      "ip": "203.0.113.77",
+      "port": 4444,
+      "host": "HOST-01",
+      "timestamp": "2026-09-10T09:00:20Z"
+    },
+    {
+      "event_type": "file_created",
+      "file": "setup_tool.exe",
+      "path": "D:\\Tools\\setup_tool.exe",
+      "host": "HOST-02",
+      "timestamp": "2026-09-10T10:00:00Z"
+    },
+    {
+      "event_type": "process_started",
+      "process": "setup_tool.exe",
+      "pid": 2002,
+      "path": "D:\\Tools\\setup_tool.exe",
+      "user": "admin",
+      "host": "HOST-02",
+      "timestamp": "2026-09-10T10:00:03Z"
+    },
+    {
+      "event_type": "login",
+      "user": "victim",
+      "host": "HOST-01",
+      "timestamp": "2026-09-10T08:59:00Z",
+      "task_category": "Logon"
+    },
+    {
+      "event_type": "usb_connected",
+      "user": "victim",
+      "host": "HOST-01",
+      "device_id": "USB\\VID_1234&PID_5678\\ABC123",
+      "drive_letter": "E:",
+      "timestamp": "2026-09-10T11:15:00Z"
+    }
+  ]
+}

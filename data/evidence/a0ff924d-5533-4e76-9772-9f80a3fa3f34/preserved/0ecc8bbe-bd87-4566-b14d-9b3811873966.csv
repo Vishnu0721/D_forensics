@@ -1,0 +1,17 @@
+event_id,timestamp,event_type,source,user,host,process,path,description,related_id,relationship_type,risk,category
+EVT-001,2026-09-13T13:30:00,process_start,Windows Security,alice,FORENSIC-PC01,powershell.exe,C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe,PowerShell started,,,NORMAL,USER_ACTIVITY
+EVT-002,2026-09-13T13:31:00,file_access,File System,alice,FORENSIC-PC01,powershell.exe,C:\Users\alice\Documents\Finance\Payroll.xlsx,Sensitive payroll file accessed,EVD-001,GENERATED,MEDIUM,USER_ACTIVITY
+EVT-003,2026-09-13T13:32:00,file_copy,File System,alice,FORENSIC-PC01,powershell.exe,C:\Users\alice\AppData\Local\Temp\Payroll.zip,Payroll file copied into archive,EVD-002,GENERATED,HIGH,SUSPICIOUS
+EVT-004,2026-09-13T13:33:00,process_start,Windows Security,alice,FORENSIC-PC01,7z.exe,C:\Program Files\7-Zip\7z.exe,Archive utility launched to compress evidence,EVT-003,PRECEDED,HIGH,SUSPICIOUS
+EVT-005,2026-09-13T13:34:00,network_connection,Windows Firewall,alice,FORENSIC-PC01,powershell.exe,203.0.113.10:443,Outbound HTTPS connection to synthetic test endpoint,EVT-003,FOLLOWED_BY,HIGH,SUSPICIOUS
+EVT-006,2026-09-13T13:35:00,file_upload,Proxy Log,alice,FORENSIC-PC01,powershell.exe,https://example.test/upload/payroll.zip,Synthetic archive upload detected,EVD-002,EXTERNAL_TRANSFER,HIGH,SUSPICIOUS
+EVT-007,2026-09-13T13:36:00,file_delete,File System,alice,FORENSIC-PC01,powershell.exe,C:\Users\alice\AppData\Local\Temp\Payroll.zip,Temporary archive deleted after upload,EVT-006,FOLLOWED_BY,HIGH,SUSPICIOUS
+EVT-008,2026-09-13T13:37:00,usb_device,Windows PnP,alice,FORENSIC-PC01,System,USB\VID_0781&PID_5590,USB storage device connected,EVD-003,ASSOCIATED_WITH,MEDIUM,USER_ACTIVITY
+EVT-009,2026-09-13T13:40:00,file_access,File System,alice,FORENSIC-PC01,explorer.exe,C:\Users\alice\Downloads\browser_history.csv,Browser history artifact accessed,EVD-004,GENERATED,LOW,USER_ACTIVITY
+EVT-010,2026-09-13T13:42:00,network_connection,Windows Firewall,alice,FORENSIC-PC01,chrome.exe,198.51.100.25:443,HTTPS connection to synthetic documentation endpoint,EVT-009,FOLLOWED_BY,LOW,BACKGROUND
+EVT-011,2026-09-13T13:45:00,login_failure,Windows Security,administrator,FORENSIC-PC01,winlogon.exe,10.0.0.55,Failed administrator login attempt #1,EVD-005,ASSOCIATED_WITH,MEDIUM,SUSPICIOUS
+EVT-012,2026-09-13T13:46:00,login_failure,Windows Security,administrator,FORENSIC-PC01,winlogon.exe,10.0.0.55,Failed administrator login attempt #2,EVT-011,FOLLOWED_BY,MEDIUM,SUSPICIOUS
+EVT-013,2026-09-13T13:47:00,login_failure,Windows Security,administrator,FORENSIC-PC01,winlogon.exe,10.0.0.55,Failed administrator login attempt #3,EVT-012,FOLLOWED_BY,MEDIUM,SUSPICIOUS
+EVT-014,2026-09-13T13:50:00,file_access,File System,alice,FORENSIC-PC01,excel.exe,C:\Users\alice\Documents\Finance\Payroll.xlsx,Payroll file opened in spreadsheet application,EVD-001,SAME_ARTIFACT,MEDIUM,USER_ACTIVITY
+EVT-015,2026-09-13T13:51:00,file_modify,File System,alice,FORENSIC-PC01,excel.exe,C:\Users\alice\Documents\Finance\Payroll.xlsx,Payroll file modified,EVD-001,FOLLOWED_BY,MEDIUM,USER_ACTIVITY
+EVT-016,2026-09-13T13:53:00,process_end,Windows Security,alice,FORENSIC-PC01,powershell.exe,C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe,PowerShell process ended,EVT-001,RELATED_TO,LOW,USER_ACTIVITY

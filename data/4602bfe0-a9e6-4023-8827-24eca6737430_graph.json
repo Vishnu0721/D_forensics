@@ -1,0 +1,80 @@
+{
+  "directed": true,
+  "multigraph": true,
+  "graph": {},
+  "nodes": [
+    {
+      "type": "File",
+      "label": "WORKSTATION-14.corp.local_update_svc.exe",
+      "id": "WORKSTATION-14.corp.local_update_svc.exe"
+    },
+    {
+      "type": "Process",
+      "label": "WORKSTATION-14.corp.local_5588_update_svc.exe",
+      "id": "WORKSTATION-14.corp.local_5588_update_svc.exe"
+    },
+    {
+      "type": "IP",
+      "label": "203.0.113.77",
+      "id": "203.0.113.77"
+    },
+    {
+      "type": "File",
+      "label": "WORKSTATION-22.corp.local_setup_tool.exe",
+      "id": "WORKSTATION-22.corp.local_setup_tool.exe"
+    },
+    {
+      "type": "Process",
+      "label": "WORKSTATION-22.corp.local_7002_setup_tool.exe",
+      "id": "WORKSTATION-22.corp.local_7002_setup_tool.exe"
+    }
+  ],
+  "edges": [
+    {
+      "relationship_type": "EXECUTED_AS",
+      "confidence": 0.98,
+      "evidence_ids": [
+        "ae49ed79-ac22-469c-9359-4fff7a46e764",
+        "ae49ed79-ac22-469c-9359-4fff7a46e764"
+      ],
+      "reasons": [
+        "Matching exact path C:\\Users\\jdoe\\AppData\\Local\\Temp\\update_svc.exe on host WORKSTATION-14.corp.local",
+        "Events occurred 5.076 seconds apart"
+      ],
+      "source": "WORKSTATION-14.corp.local_update_svc.exe",
+      "target": "WORKSTATION-14.corp.local_5588_update_svc.exe",
+      "key": "EXECUTED_AS"
+    },
+    {
+      "relationship_type": "CONNECTED_TO",
+      "confidence": 1.0,
+      "evidence_ids": [
+        "ae49ed79-ac22-469c-9359-4fff7a46e764",
+        "ae49ed79-ac22-469c-9359-4fff7a46e764"
+      ],
+      "reasons": [
+        "Matching PID 5588 on host WORKSTATION-14.corp.local",
+        "Events occurred 10.283 seconds apart",
+        "Process update_svc.exe (PID 5588) directly established connection to 203.0.113.77"
+      ],
+      "source": "WORKSTATION-14.corp.local_5588_update_svc.exe",
+      "target": "203.0.113.77",
+      "key": "CONNECTED_TO"
+    },
+    {
+      "relationship_type": "EXECUTED_AS",
+      "confidence": 0.98,
+      "evidence_ids": [
+        "ae49ed79-ac22-469c-9359-4fff7a46e764",
+        "ae49ed79-ac22-469c-9359-4fff7a46e764"
+      ],
+      "reasons": [
+        "Matching exact path D:\\Tools\\setup_tool.exe on host WORKSTATION-22.corp.local",
+        "Events occurred 3.21 seconds apart"
+      ],
+      "source": "WORKSTATION-22.corp.local_setup_tool.exe",
+      "target": "WORKSTATION-22.corp.local_7002_setup_tool.exe",
+      "key": "EXECUTED_AS"
+    }
+  ]
+}

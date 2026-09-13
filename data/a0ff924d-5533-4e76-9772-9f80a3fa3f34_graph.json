@@ -1,0 +1,104 @@
+{
+  "directed": true,
+  "multigraph": true,
+  "graph": {},
+  "nodes": [
+    {
+      "type": "User",
+      "label": "victim",
+      "id": "victim"
+    },
+    {
+      "type": "File",
+      "label": "HOST-01_invoice_update.exe",
+      "id": "HOST-01_invoice_update.exe"
+    },
+    {
+      "type": "Process",
+      "label": "HOST-01_4321_invoice_update.exe",
+      "id": "HOST-01_4321_invoice_update.exe"
+    },
+    {
+      "type": "IP",
+      "label": "203.0.113.77",
+      "id": "203.0.113.77"
+    },
+    {
+      "type": "File",
+      "label": "HOST-02_setup_tool.exe",
+      "id": "HOST-02_setup_tool.exe"
+    },
+    {
+      "type": "Process",
+      "label": "HOST-02_2002_setup_tool.exe",
+      "id": "HOST-02_2002_setup_tool.exe"
+    }
+  ],
+  "edges": [
+    {
+      "relationship_type": "DOWNLOADED",
+      "confidence": 0.94,
+      "evidence_ids": [
+        "bc432bde-d864-488b-86f3-6017e58619b6",
+        "bc432bde-d864-488b-86f3-6017e58619b6",
+        "a62b53e5-2888-4498-a0a8-7d8d51e6e162"
+      ],
+      "reasons": [
+        "User victim downloaded invoice_update.exe",
+        "Events occurred 5.0 seconds apart"
+      ],
+      "source": "victim",
+      "target": "HOST-01_invoice_update.exe",
+      "key": "DOWNLOADED"
+    },
+    {
+      "relationship_type": "EXECUTED_AS",
+      "confidence": 0.98,
+      "evidence_ids": [
+        "bc432bde-d864-488b-86f3-6017e58619b6",
+        "bc432bde-d864-488b-86f3-6017e58619b6",
+        "a62b53e5-2888-4498-a0a8-7d8d51e6e162"
+      ],
+      "reasons": [
+        "Matching exact path C:\\Users\\victim\\AppData\\Local\\Temp\\invoice_update.exe on host HOST-01",
+        "Events occurred 5.0 seconds apart"
+      ],
+      "source": "HOST-01_invoice_update.exe",
+      "target": "HOST-01_4321_invoice_update.exe",
+      "key": "EXECUTED_AS"
+    },
+    {
+      "relationship_type": "CONNECTED_TO",
+      "confidence": 1.0,
+      "evidence_ids": [
+        "bc432bde-d864-488b-86f3-6017e58619b6",
+        "bc432bde-d864-488b-86f3-6017e58619b6",
+        "a62b53e5-2888-4498-a0a8-7d8d51e6e162"
+      ],
+      "reasons": [
+        "Matching PID 4321 on host HOST-01",
+        "Events occurred 10.0 seconds apart",
+        "Process invoice_update.exe (PID 4321) directly established connection to 203.0.113.77"
+      ],
+      "source": "HOST-01_4321_invoice_update.exe",
+      "target": "203.0.113.77",
+      "key": "CONNECTED_TO"
+    },
+    {
+      "relationship_type": "EXECUTED_AS",
+      "confidence": 0.98,
+      "evidence_ids": [
+        "bc432bde-d864-488b-86f3-6017e58619b6",
+        "bc432bde-d864-488b-86f3-6017e58619b6",
+        "a62b53e5-2888-4498-a0a8-7d8d51e6e162"
+      ],
+      "reasons": [
+        "Matching exact path D:\\Tools\\setup_tool.exe on host HOST-02",
+        "Events occurred 3.0 seconds apart"
+      ],
+      "source": "HOST-02_setup_tool.exe",
+      "target": "HOST-02_2002_setup_tool.exe",
+      "key": "EXECUTED_AS"
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+[
+  {
+    "timestamp": "2025-09-13T10:31:02",
+    "event_type": "login",
+    "user": "john.doe",
+    "host": "DESKTOP-ABC123"
+  },
+  {
+    "timestamp": "2025-09-13T10:31:05",
+    "event_type": "process_started",
+    "user": "john.doe",
+    "host": "DESKTOP-ABC123",
+    "process": "powershell.exe",
+    "pid": 4520,
+    "parent_process": "explorer.exe",
+    "path": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+  },
+  {
+    "timestamp": "2025-09-13T10:31:08",
+    "event_type": "file_created",
+    "user": "john.doe",
+    "host": "DESKTOP-ABC123",
+    "file": "payload.exe",
+    "path": "C:\\Users\\john.doe\\AppData\\Local\\Temp\\payload.exe"
+  },
+  {
+    "timestamp": "2025-09-13T10:31:21",
+    "event_type": "process_started",
+    "user": "john.doe",
+    "host": "DESKTOP-ABC123",
+    "process": "payload.exe",
+    "pid": 8192,
+    "parent_process": "powershell.exe",
+    "path": "C:\\Users\\john.doe\\AppData\\Local\\Temp\\payload.exe"
+  },
+  {
+    "timestamp": "2025-09-13T10:31:25",
+    "event_type": "connection",
+    "user": "john.doe",
+    "host": "DESKTOP-ABC123",
+    "process": "payload.exe",
+    "pid": 8192,
+    "destination_ip": "192.0.2.47",
+    "destination_port": 443
+  }
+]

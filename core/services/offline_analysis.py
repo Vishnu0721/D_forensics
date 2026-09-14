@@ -1,11 +1,8 @@
-import os
 import datetime
 from typing import Dict, Any, List, Optional, Callable
 from sqlalchemy.orm import Session
-from PySide6.QtCore import QObject, Signal, Slot
 
 from core.database.models import ForensicEvent, EvidenceArtifact
-from core.database import SessionLocal
 from core.services.ingestion import ingest_preserved_evidence
 from core.services.report_parser import parse_report, ParseResult
 from core.services.normalization import normalize_records, bulk_store_events
@@ -19,41 +16,62 @@ from core.services.classification import ClassificationEngine
 ProgressCallback = Optional[Callable[[str], None]]
 
 
-class OfflineAnalysisWorker(QObject):
-    progress = Signal(str)
-    analysis_complete = Signal(object)
-    analysis_error = Signal(str)
+def _make_offline_worker_class():
+    """Lazy Qt worker so the web API can import run_offline_analysis without PySide6."""
+    from PySide6.QtCore import QObject, Signal, Slot
+    from core.database import SessionLocal
 
-    def __init__(self, case_id: str, source_file_path: str, graph_db: EvidenceGraph,
-                 actor: str = "investigator", force_source_type: Optional[str] = None):
-        super().__init__()
-        self.case_id = case_id
-        self.source_file_path = source_file_path
-        self.graph_db = graph_db
-        self.actor = actor
-        self.force_source_type = force_source_type
+    class OfflineAnalysisWorker(QObject):
+        progress = Signal(str)
+        analysis_complete = Signal(object)
+        analysis_error = Signal(str)
 
-    @Slot()
-    def run(self):
-        db = SessionLocal()
-        try:
-            result = run_offline_analysis(
-                db=db,
-                case_id=self.case_id,
-                source_file_path=self.source_file_path,
-                graph_db=self.graph_db,
-                actor=self.actor,
-                force_source_type=self.force_source_type,
-                progress_cb=lambda msg: self.progress.emit(msg),
-            )
-            if result.evidence:
-                db.refresh(result.evidence)
-            db.expunge_all()
-            self.analysis_complete.emit(result)
-        except Exception as e:
-            self.analysis_error.emit(str(e))
-        finally:
-            db.close()
+        def __init__(self, case_id: str, source_file_path: str, graph_db: EvidenceGraph,
+                     actor: str = "investigator", force_source_type: Optional[str] = None):
+            super().__init__()
+            self.case_id = case_id
+            self.source_file_path = source_file_path
+            self.graph_db = graph_db
+            self.actor = actor
+            self.force_source_type = force_source_type
+
+        @Slot()
+        def run(self):
+            db = SessionLocal()
+            try:
+                result = run_offline_analysis(
+                    db=db,
+                    case_id=self.case_id,
+                    source_file_path=self.source_file_path,
+                    graph_db=self.graph_db,
+                    actor=self.actor,
+                    force_source_type=self.force_source_type,
+                    progress_cb=lambda msg: self.progress.emit(msg),
+                )
+                if result.evidence:
+                    db.refresh(result.evidence)
+                db.expunge_all()
+                self.analysis_complete.emit(result)
+            except Exception as e:
+                self.analysis_error.emit(str(e))
+            finally:
+                db.close()
+
+    return OfflineAnalysisWorker
+
+
+class _OfflineAnalysisWorkerProxy:
+    """Attribute access constructs the real Qt worker class on first use."""
+
+    _cls = None
+
+    def __call__(self, *args, **kwargs):
+        if self._cls is None:
+            self._cls = _make_offline_worker_class()
+        return self._cls(*args, **kwargs)
+
+
+OfflineAnalysisWorker = _OfflineAnalysisWorkerProxy()
 
 
 class OfflineAnalysisResult:
@@ -109,23 +127,20 @@ def _emit(progress_cb: ProgressCallback, msg: str) -> None:
             pass
 
 
-def run_offline_analysis(
+def analyze_preserved_artifact(
     db: Session,
     case_id: str,
-    source_file_path: str,
+    evidence: EvidenceArtifact,
     graph_db: EvidenceGraph,
     actor: str = "investigator",
     force_source_type: Optional[str] = None,
     progress_cb: ProgressCallback = None,
 ) -> OfflineAnalysisResult:
+    """Parse → normalize → correlate → findings for an already-ingested artifact."""
     result = OfflineAnalysisResult()
+    result.evidence = evidence
 
     try:
-        _emit(progress_cb, "Uploading evidence...")
-        evidence = ingest_preserved_evidence(db, case_id, source_file_path, "offline_report", actor)
-        result.evidence = evidence
-        _emit(progress_cb, f"SHA-256 calculated: {evidence.sha256_hash[:16]}...")
-
         _emit(progress_cb, "Parsing report...")
         parse_result = parse_report(evidence.original_path)
         result.parse_result = parse_result
@@ -134,6 +149,7 @@ def run_offline_analysis(
             result.success = False
             result.error_message = parse_result.error_message or "Unsupported or unparseable evidence format"
             _emit(progress_cb, f"Warning: {result.error_message}")
+            # Preserve artifact even when parse fails (matches prior behavior)
             result.success = True
             return result
 
@@ -148,7 +164,7 @@ def run_offline_analysis(
 
         events_sorted = sorted(
             events,
-            key=lambda e: (e.timestamp if e.timestamp else __import__("datetime").datetime.max)
+            key=lambda e: (e.timestamp if e.timestamp else datetime.datetime.max)
         )
         result.events = events_sorted
 
@@ -157,10 +173,7 @@ def run_offline_analysis(
             result.events_stored = stored
             db.commit()
         else:
-            stored = 0
             result.events_stored = 0
-
-        _emit(progress_cb, "Detecting suspicious activity (pre-correlation)...")
 
         if events_sorted:
             _emit(progress_cb, "Correlating events...")
@@ -196,6 +209,48 @@ def run_offline_analysis(
         _emit(progress_cb, "Finalizing analysis...")
         _emit(progress_cb, "Analysis Complete")
         return result
+
+    except Exception as e:
+        result.success = False
+        result.error_message = f"Analysis error: {e}"
+        return result
+
+
+def run_offline_analysis(
+    db: Session,
+    case_id: str,
+    source_file_path: str,
+    graph_db: EvidenceGraph,
+    actor: str = "investigator",
+    force_source_type: Optional[str] = None,
+    progress_cb: ProgressCallback = None,
+    evidence_root: Optional[str] = None,
+) -> OfflineAnalysisResult:
+    result = OfflineAnalysisResult()
+
+    try:
+        _emit(progress_cb, "Uploading evidence...")
+        evidence = ingest_preserved_evidence(
+            db,
+            case_id,
+            source_file_path,
+            "offline_report",
+            actor,
+            evidence_root=evidence_root,
+        )
+        result.evidence = evidence
+        _emit(progress_cb, f"SHA-256 calculated: {evidence.sha256_hash[:16]}...")
+
+        analyzed = analyze_preserved_artifact(
+            db=db,
+            case_id=case_id,
+            evidence=evidence,
+            graph_db=graph_db,
+            actor=actor,
+            force_source_type=force_source_type,
+            progress_cb=progress_cb,
+        )
+        return analyzed
 
     except Exception as e:
         result.success = False

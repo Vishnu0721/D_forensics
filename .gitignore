@@ -37,3 +37,12 @@ Thumbs.db
 # Output folders (if generated)
 logs/
 output/
+
+# Web app (Phase 0+)
+web_data/*
+!web_data/.gitkeep
+web/node_modules/
+web/dist/
+web/.vite/
+api/.venv/
+*.egg-info/

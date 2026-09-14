@@ -1,0 +1,633 @@
+openapi: 3.1.0
+info:
+  title: Digital Forensics Web API
+  version: 0.1.0-draft
+  description: |
+    Contract draft for Phase 1+. Phase 0 implements only /health and /api/v1/meta.
+    MVP is offline / import-first. Live agent endpoints are reserved and disabled.
+servers:
+  - url: http://127.0.0.1:8000
+    description: Local development
+
+tags:
+  - name: health
+  - name: meta
+  - name: cases
+  - name: evidence
+  - name: jobs
+  - name: events
+  - name: findings
+  - name: graph
+  - name: integrity
+
+paths:
+  /health:
+    get:
+      tags: [health]
+      summary: Liveness / readiness
+      operationId: getHealth
+      responses:
+        "200":
+          description: Service is up
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /api/v1/meta:
+    get:
+      tags: [meta]
+      summary: Product meta, nav, feature flags
+      operationId: getMeta
+      responses:
+        "200":
+          description: Product configuration for the UI
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MetaResponse"
+
+  /api/v1/cases:
+    get:
+      tags: [cases]
+      summary: List investigation cases
+      operationId: listCases
+      responses:
+        "200":
+          description: Case list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CaseSummary"
+    post:
+      tags: [cases]
+      summary: Create a case
+      operationId: createCase
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CaseCreate"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaseSummary"
+
+  /api/v1/cases/{case_id}:
+    get:
+      tags: [cases]
+      summary: Get case detail / overview stats
+      operationId: getCase
+      parameters:
+        - $ref: "#/components/parameters/CaseId"
+      responses:
+        "200":
+          description: Case overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaseDetail"
+    patch:
+      tags: [cases]
+      summary: Rename or update case metadata
+      operationId: updateCase
+      parameters:
+        - $ref: "#/components/parameters/CaseId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CaseUpdate"
+      responses:
+        "200":
+          description: Updated case
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaseSummary"
+
+  /api/v1/cases/{case_id}/evidence:
+    get:
+      tags: [evidence]
+      summary: List evidence artifacts for a case
+      operationId: listEvidence
+      parameters:
+        - $ref: "#/components/parameters/CaseId"
+      responses:
+        "200":
+          description: Evidence list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/EvidenceSummary"
+    post:
+      tags: [evidence]
+      summary: Upload / import preserved evidence
+      operationId: uploadEvidence
+      parameters:
+        - $ref: "#/components/parameters/CaseId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                source_hint:
+                  type: string
+                  description: Optional hint (json, csv, sysmon, log)
+      responses:
+        "201":
+          description: Evidence preserved and hashed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvidenceSummary"
+
+  /api/v1/cases/{case_id}/analyze:
+    post:
+      tags: [jobs]
+      summary: Start offline analysis job for a case
+      operationId: startAnalysis
+      parameters:
+        - $ref: "#/components/parameters/CaseId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                evidence_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                  description: If omitted, analyze all case evidence
+      responses:
+        "202":
+          description: Job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobStatus"
+
+  /api/v1/jobs/{job_id}:
+    get:
+      tags: [jobs]
+      summary: Poll analysis job status
+      operationId: getJob
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Job status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobStatus"
+
+  /api/v1/cases/{case_id}/events:
+    get:
+      tags: [events]
+      summary: Paged timeline events (plain-language DTOs)
+      operationId: listEvents
+      parameters:
+        - $ref: "#/components/parameters/CaseId"
+        - name: filter
+          in: query
+          schema:
+            type: string
+            enum: [all, user, findings, linked, unclear]
+            default: all
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Event page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventPage"
+
+  /api/v1/cases/{case_id}/events/{event_id}:
+    get:
+      tags: [events]
+      summary: Event detail (plain + technical)
+      operationId: getEvent
+      parameters:
+        - $ref: "#/components/parameters/CaseId"
+        - name: event_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Event detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventDetail"
+
+  /api/v1/cases/{case_id}/findings:
+    get:
+      tags: [findings]
+      summary: Unified findings (suspicious + activity stories)
+      operationId: listFindings
+      parameters:
+        - $ref: "#/components/parameters/CaseId"
+      responses:
+        "200":
+          description: Findings and stories
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FindingsResponse"
+
+  /api/v1/cases/{case_id}/graph:
+    get:
+      tags: [graph]
+      summary: Evidence graph JSON for Connections UI
+      operationId: getGraph
+      parameters:
+        - $ref: "#/components/parameters/CaseId"
+        - name: view
+          in: query
+          schema:
+            type: string
+            enum: [simple, detailed]
+            default: simple
+      responses:
+        "200":
+          description: Graph payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GraphResponse"
+
+  /api/v1/cases/{case_id}/integrity:
+    get:
+      tags: [integrity]
+      summary: Integrity table for preserved artifacts
+      operationId: listIntegrity
+      parameters:
+        - $ref: "#/components/parameters/CaseId"
+      responses:
+        "200":
+          description: Integrity rows
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IntegrityResponse"
+    post:
+      tags: [integrity]
+      summary: Re-verify hashes for case evidence
+      operationId: verifyIntegrity
+      parameters:
+        - $ref: "#/components/parameters/CaseId"
+      responses:
+        "200":
+          description: Updated integrity rows
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IntegrityResponse"
+
+components:
+  parameters:
+    CaseId:
+      name: case_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        phase:
+          type: integer
+          example: 0
+        data_root:
+          type: string
+        database_url:
+          type: string
+
+    MetaResponse:
+      type: object
+      properties:
+        product_name:
+          type: string
+        tagline:
+          type: string
+        theme:
+          type: string
+          enum: [light]
+        mvp:
+          type: string
+        live_agent:
+          type: boolean
+        auth_required:
+          type: boolean
+        navigation:
+          type: object
+        renames:
+          type: object
+        phases:
+          type: object
+
+    CaseCreate:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+
+    CaseUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+
+    CaseSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        mode:
+          type: string
+          enum: [imported, live]
+          description: live reserved for Phase 6
+        created_at:
+          type: string
+          format: date-time
+        evidence_count:
+          type: integer
+        event_count:
+          type: integer
+
+    CaseDetail:
+      allOf:
+        - $ref: "#/components/schemas/CaseSummary"
+        - type: object
+          properties:
+            last_analysis_at:
+              type: string
+              format: date-time
+              nullable: true
+            top_findings:
+              type: array
+              items:
+                $ref: "#/components/schemas/FindingSummary"
+
+    EvidenceSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        filename:
+          type: string
+        source_type:
+          type: string
+        sha256_hash:
+          type: string
+        file_size:
+          type: integer
+        integrity_status:
+          $ref: "#/components/schemas/IntegrityStatus"
+        created_at:
+          type: string
+          format: date-time
+
+    JobStatus:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        case_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [queued, running, completed, failed]
+        progress:
+          type: number
+          minimum: 0
+          maximum: 1
+        message:
+          type: string
+        error:
+          type: string
+          nullable: true
+
+    PlainLanguage:
+      type: object
+      properties:
+        headline:
+          type: string
+        detail:
+          type: string
+        severity_label:
+          type: string
+          description: e.g. Informational, Review recommended
+
+    EventSummary:
+      allOf:
+        - $ref: "#/components/schemas/PlainLanguage"
+        - type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            timestamp:
+              type: string
+              format: date-time
+            source_type:
+              type: string
+            event_type:
+              type: string
+            classification:
+              type: string
+
+    EventDetail:
+      allOf:
+        - $ref: "#/components/schemas/EventSummary"
+        - type: object
+          properties:
+            technical:
+              type: object
+              additionalProperties: true
+            evidence_id:
+              type: string
+              format: uuid
+              nullable: true
+
+    EventPage:
+      type: object
+      properties:
+        total:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/EventSummary"
+
+    FindingSummary:
+      allOf:
+        - $ref: "#/components/schemas/PlainLanguage"
+        - type: object
+          properties:
+            id:
+              type: string
+            kind:
+              type: string
+              enum: [rule, story]
+            related_event_ids:
+              type: array
+              items:
+                type: string
+                format: uuid
+
+    FindingsResponse:
+      type: object
+      properties:
+        findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/FindingSummary"
+        stories:
+          type: array
+          items:
+            $ref: "#/components/schemas/FindingSummary"
+
+    GraphNode:
+      type: object
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        kind:
+          type: string
+          enum: [process, file, ip, user, device, other]
+        story:
+          type: string
+
+    GraphEdge:
+      type: object
+      properties:
+        id:
+          type: string
+        source:
+          type: string
+        target:
+          type: string
+        relationship:
+          type: string
+        confidence:
+          type: number
+
+    GraphResponse:
+      type: object
+      properties:
+        view:
+          type: string
+          enum: [simple, detailed]
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/GraphNode"
+        edges:
+          type: array
+          items:
+            $ref: "#/components/schemas/GraphEdge"
+
+    IntegrityStatus:
+      type: string
+      enum: [VALID, MODIFIED, UNVERIFIABLE, PENDING]
+      description: |
+        UI labels (light theme):
+        VALID → Unchanged
+        MODIFIED → Changed on disk
+        UNVERIFIABLE → File missing
+        PENDING → Not checked yet
+
+    IntegrityRow:
+      type: object
+      properties:
+        evidence_id:
+          type: string
+          format: uuid
+        what:
+          type: string
+        sha256_hash:
+          type: string
+        status:
+          $ref: "#/components/schemas/IntegrityStatus"
+        status_label:
+          type: string
+        collected_at:
+          type: string
+          format: date-time
+
+    IntegrityResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/IntegrityRow"
+        legend:
+          type: object
+          additionalProperties:
+            type: string

@@ -17,7 +17,7 @@ Clarity and stability improvements on top of the original pipeline:
 - **Quick tour** (Help → Quick tour) for first-time users
 - Performance hardening: interruptible collectors, SQLite WAL, debounced graph updates, layout off the UI thread
 
-> A separate **light-theme web app** is planned (same repo, later). The desktop app remains the supported UI today.
+> A separate **light-theme web app** is under development on `feature/webapp` (`api/` + `web/`). The desktop app remains the supported UI for live monitoring today.
 
 ## Overview
 
@@ -221,15 +221,29 @@ python test_sysmon_adapter.py
 - Large graphs can be heavy; Simple view and debouncing reduce UI freeze risk  
 - Collectors watch **this PC only** — not remote endpoints  
 
-## Roadmap (planned)
+## Roadmap (web app)
 
-- Light-theme **web app** in the same repository (`api/` + `web/`), reusing `core/`  
-- Separate DB/data paths so desktop and web do not clash when both are developed  
+Light-theme **web app** is in progress on branch `feature/webapp` (`api/` + `web/`), reusing `core/`.
+
+| Phase | Focus | Status |
+|-------|--------|--------|
+| 0 | Foundations, IA, design tokens, OpenAPI draft, data isolation | **Done** |
+| 1 | Cases, upload, analysis jobs, read APIs | **Done** |
+| 2 | Web shell wired to cases / Overview | **Done** |
+| 3 | Import wizard, Timeline, Findings | **Done** |
+| 4 | Connections (graph), Integrity | Planned |
+| 5 | Tour, export, polish | Planned |
+| 6 | Optional local live agent | Later |
+
+Web data is isolated: `web_data/forensics_web.db` and `web_data/evidence/` (desktop keeps `forensics.db` / `data/`).
+
+See [docs/webapp/PHASE0.md](docs/webapp/PHASE0.md), [api/README.md](api/README.md), [web/README.md](web/README.md).
 
 ## Related Documentation
 
 - [technical_audit_report.md](technical_audit_report.md) — earlier technical observations (some items may be outdated vs current GUI)
 - [evaluation/run_evaluation.py](evaluation/run_evaluation.py) — evaluation helpers
+- [docs/webapp/PHASE0.md](docs/webapp/PHASE0.md) — webapp Phase 0 decisions
 
 ## Responsible Use
 

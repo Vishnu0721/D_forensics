@@ -1,0 +1,116 @@
+/**
+ * Light-theme design tokens — Phase 0.
+ * Intentionally not a dark SOC palette; academic / lab clarity.
+ */
+
+:root {
+  /* Surfaces */
+  --df-bg: #f3f5f7;
+  --df-surface: #ffffff;
+  --df-surface-muted: #e8eef2;
+  --df-border: #c9d4dc;
+  --df-border-strong: #9aadb8;
+
+  /* Text */
+  --df-text: #1a2b34;
+  --df-text-muted: #5a6f7a;
+  --df-text-inverse: #f7fafb;
+
+  /* Brand / accent (slate-teal, not purple) */
+  --df-accent: #0f6e6a;
+  --df-accent-hover: #0c5855;
+  --df-accent-soft: #d7eeec;
+
+  /* Semantic status — always pair with label text */
+  --df-ok: #1f7a4c;
+  --df-ok-bg: #e6f5ec;
+  --df-warn: #9a6b00;
+  --df-warn-bg: #fff3d6;
+  --df-danger: #b42318;
+  --df-danger-bg: #fde8e6;
+  --df-info: #1d5a8a;
+  --df-info-bg: #e5f1fa;
+  --df-pending: #5a6f7a;
+  --df-pending-bg: #eef2f4;
+
+  /* Integrity label mapping */
+  --df-status-unchanged: var(--df-ok);
+  --df-status-changed: var(--df-warn);
+  --df-status-missing: var(--df-danger);
+  --df-status-unchecked: var(--df-pending);
+
+  /* Type */
+  --df-font-sans: "IBM Plex Sans", "Segoe UI", sans-serif;
+  --df-font-display: "Source Serif 4", Georgia, serif;
+  --df-font-mono: "IBM Plex Mono", "Consolas", monospace;
+
+  --df-text-xs: 0.75rem;
+  --df-text-sm: 0.875rem;
+  --df-text-md: 1rem;
+  --df-text-lg: 1.25rem;
+  --df-text-xl: 1.75rem;
+
+  /* Spacing & radius */
+  --df-space-1: 0.25rem;
+  --df-space-2: 0.5rem;
+  --df-space-3: 0.75rem;
+  --df-space-4: 1rem;
+  --df-space-5: 1.5rem;
+  --df-space-6: 2rem;
+  --df-radius: 6px;
+  --df-radius-lg: 10px;
+
+  /* Layout */
+  --df-nav-width: 14rem;
+  --df-max-content: 72rem;
+  --df-shadow: 0 1px 2px rgba(26, 43, 52, 0.06);
+
+  color-scheme: light;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--df-font-sans);
+  font-size: var(--df-text-md);
+  line-height: 1.5;
+  color: var(--df-text);
+  background:
+    radial-gradient(ellipse 80% 50% at 100% 0%, #dceeea 0%, transparent 55%),
+    radial-gradient(ellipse 60% 40% at 0% 100%, #e4ebf2 0%, transparent 50%),
+    var(--df-bg);
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--df-font-display);
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--df-text);
+}
+
+a {
+  color: var(--df-accent);
+}
+
+button {
+  font-family: inherit;
+}
+
+code,
+.mono {
+  font-family: var(--df-font-mono);
+  font-size: 0.92em;
+}

@@ -17,7 +17,9 @@ Clarity and stability improvements on top of the original pipeline:
 - **Quick tour** (Help → Quick tour) for first-time users
 - Performance hardening: interruptible collectors, SQLite WAL, debounced graph updates, layout off the UI thread
 
-> A separate **light-theme web app** is under development on `feature/webapp` (`api/` + `web/`). The desktop app remains the supported UI for live monitoring today.
+> A separate **light-theme web app** is available on branch `feature/webapp` (`api/` + `web/`).  
+> **Testers:** see **[web/README.md](web/README.md)** for setup and a full manual test plan.  
+> The desktop app on `main` remains the primary PySide6 UI.
 
 ## Overview
 
@@ -221,9 +223,27 @@ python test_sysmon_adapter.py
 - Large graphs can be heavy; Simple view and debouncing reduce UI freeze risk  
 - Collectors watch **this PC only** — not remote endpoints  
 
-## Roadmap (web app)
+## Web app (branch `feature/webapp`)
 
-Light-theme **web app** is in progress on branch `feature/webapp` (`api/` + `web/`), reusing `core/`.
+Light-theme browser UI for offline investigation (import → timeline → findings → graph → integrity), plus optional local live monitoring. Uses **`web_data/`** only.
+
+**For other testers — start here:** [web/README.md](web/README.md)
+
+Quick start:
+
+```bash
+git checkout feature/webapp
+
+# Terminal 1 — API (from repo root)
+export PYTHONPATH="$(pwd)"   # PowerShell: $env:PYTHONPATH = (Get-Location).Path
+pip install -r api/requirements.txt
+uvicorn api.main:app --reload --app-dir .
+
+# Terminal 2 — UI
+cd web && npm install && npm run dev
+```
+
+Then open http://127.0.0.1:5173 and follow the manual test plan in `web/README.md`.
 
 | Phase | Focus | Status |
 |-------|--------|--------|
@@ -236,9 +256,11 @@ Light-theme **web app** is in progress on branch `feature/webapp` (`api/` + `web
 | 6 | Optional local live agent | **Done** |
 | 7 | Hardening & smoke tests | **Done** |
 
-Web data is isolated: `web_data/forensics_web.db` and `web_data/evidence/` (desktop keeps `forensics.db` / `data/`).
+See also [api/README.md](api/README.md), [docs/webapp/PHASE0.md](docs/webapp/PHASE0.md), [docs/webapp/PHASE5_6_7.md](docs/webapp/PHASE5_6_7.md).
 
-See [docs/webapp/PHASE0.md](docs/webapp/PHASE0.md), [docs/webapp/PHASE5_6_7.md](docs/webapp/PHASE5_6_7.md), [api/README.md](api/README.md), [web/README.md](web/README.md).
+## Roadmap notes
+
+Desktop and web are developed in parallel. Web data is isolated: `web_data/forensics_web.db` and `web_data/evidence/` (desktop keeps `forensics.db` / `data/`).
 
 ## Related Documentation
 

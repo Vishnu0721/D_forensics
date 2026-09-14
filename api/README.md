@@ -1,34 +1,45 @@
 # Digital Forensics — Web API
 
-Phase 0 skeleton. Reuses shared `core/` from the repo root.
+FastAPI backend for the web app on branch **`feature/webapp`**. Reuses shared `core/` from the repo root.  
+Writes only to **`web_data/`** (never desktop `forensics.db` / `data/`).
+
+**Full tester guide (UI + API):** [web/README.md](../web/README.md)
 
 ## Setup
 
-From the **repository root** (so `core` and `api` import correctly):
+From the **repository root**:
 
-```bash
+**Windows (PowerShell):**
+
+```powershell
+$env:PYTHONPATH = (Get-Location).Path
 pip install -r api/requirements.txt
-# Optional: also install root requirements.txt if you need full core collectors later
-$env:PYTHONPATH = "D:\D_forensics"   # PowerShell — or set permanently
 uvicorn api.main:app --reload --app-dir .
 ```
 
-Open:
+**macOS / Linux:**
 
-- API docs: http://127.0.0.1:8000/docs  
-- Health: http://127.0.0.1:8000/health  
-- Meta: http://127.0.0.1:8000/api/v1/meta  
+```bash
+export PYTHONPATH="$(pwd)"
+pip install -r api/requirements.txt
+uvicorn api.main:app --reload --app-dir .
+```
+
+| URL | Purpose |
+|-----|---------|
+| http://127.0.0.1:8000/health | Liveness (`phase` should be `7`) |
+| http://127.0.0.1:8000/docs | Interactive OpenAPI |
+| http://127.0.0.1:8000/api/v1/meta | Feature flags / nav |
 
 ## Smoke tests
 
 ```powershell
-cd D:\D_forensics
-$env:PYTHONPATH = "D:\D_forensics"
+$env:PYTHONPATH = (Get-Location).Path
 python api/smoke_phase1.py
 python api/smoke_phase5_7.py
 ```
 
-Phases 0–7 on `feature/webapp`. Uses `web_data/` only.
+Creates temporary cases (`Phase1 Smoke`, etc.) — not required for manual UI testing.
 
 ## Data isolation
 
@@ -37,8 +48,8 @@ Phases 0–7 on `feature/webapp`. Uses `web_data/` only.
 | Desktop | `forensics.db` | `data/evidence/` |
 | Web | `web_data/forensics_web.db` | `web_data/evidence/` |
 
-Override with env prefix `FORENSICS_WEB_` (see `api/config.py`).
+Env overrides use prefix `FORENSICS_WEB_` (see `api/config.py`).
 
 ## Contract
 
-See [openapi.yaml](openapi.yaml) for the API draft (implemented through Phase 1).
+See [openapi.yaml](openapi.yaml).

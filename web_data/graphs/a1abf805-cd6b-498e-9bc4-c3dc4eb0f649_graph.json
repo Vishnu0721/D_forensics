@@ -1,0 +1,64 @@
+{
+  "directed": true,
+  "multigraph": true,
+  "graph": {},
+  "nodes": [
+    {
+      "type": "File",
+      "label": "payload.exe",
+      "subtitle": "File",
+      "host": "DESKTOP-ABC123",
+      "file": "payload.exe",
+      "id": "DESKTOP-ABC123_payload.exe"
+    },
+    {
+      "type": "Process",
+      "label": "payload.exe",
+      "subtitle": "PID 8192",
+      "host": "DESKTOP-ABC123",
+      "pid": "8192",
+      "process": "payload.exe",
+      "id": "DESKTOP-ABC123_8192_payload.exe"
+    },
+    {
+      "type": "IP",
+      "label": "192.0.2.47",
+      "subtitle": "Remote IP",
+      "ip": "192.0.2.47",
+      "id": "192.0.2.47"
+    }
+  ],
+  "links": [
+    {
+      "relationship_type": "EXECUTED_AS",
+      "confidence": 0.98,
+      "evidence_ids": [
+        "e32de746-4490-4074-af3f-1030a07ce0c5",
+        "e32de746-4490-4074-af3f-1030a07ce0c5"
+      ],
+      "reasons": [
+        "Matching exact path C:\\Users\\john.doe\\AppData\\Local\\Temp\\payload.exe on host DESKTOP-ABC123",
+        "Events occurred 13.0 seconds apart"
+      ],
+      "source": "DESKTOP-ABC123_payload.exe",
+      "target": "DESKTOP-ABC123_8192_payload.exe",
+      "key": "EXECUTED_AS"
+    },
+    {
+      "relationship_type": "CONNECTED_TO",
+      "confidence": 1.0,
+      "evidence_ids": [
+        "e32de746-4490-4074-af3f-1030a07ce0c5",
+        "e32de746-4490-4074-af3f-1030a07ce0c5"
+      ],
+      "reasons": [
+        "Matching PID 8192 on host DESKTOP-ABC123",
+        "Events occurred 4.0 seconds apart",
+        "Process payload.exe (PID 8192) directly established connection to 192.0.2.47"
+      ],
+      "source": "DESKTOP-ABC123_8192_payload.exe",
+      "target": "192.0.2.47",
+      "key": "CONNECTED_TO"
+    }
+  ]
+}

@@ -1,0 +1,237 @@
+{
+  "case_id": "e4995706-28f2-485c-9ead-30bbe39b650e",
+  "analyzed_at": "2026-09-14T16:12:43.089533+00:00",
+  "evidence_ids": [
+    "bf001abc-9a76-4fee-b973-b670d80f36bf"
+  ],
+  "events_stored": 5,
+  "relationship_count": 3,
+  "classification_counts": {
+    "USER_ACTIVITY": 0,
+    "BACKGROUND_ACTIVITY": 0,
+    "SUSPICIOUS_ACTIVITY": 5,
+    "CORRELATED_ACTIVITY": 0,
+    "UNKNOWN": 0
+  },
+  "findings": [
+    {
+      "id": "SUSP-NET-DESKTOP-ABC123_8192_payload.exe-192.0.2.47",
+      "kind": "rule",
+      "headline": "Network Execution",
+      "detail": "A newly created or dropped file was executed and established an outbound network connection.",
+      "severity_label": "Review recommended",
+      "related_event_ids": [
+        "bf001abc-9a76-4fee-b973-b670d80f36bf"
+      ]
+    },
+    {
+      "id": "SUSP-DIR-DESKTOP-ABC123_8192_payload.exe",
+      "kind": "rule",
+      "headline": "Unusual Directory Execution",
+      "detail": "Process executed from a user-writable or temporary directory.",
+      "severity_label": "Review recommended",
+      "related_event_ids": [
+        "bf001abc-9a76-4fee-b973-b670d80f36bf",
+        "bf001abc-9a76-4fee-b973-b670d80f36bf"
+      ]
+    }
+  ],
+  "stories": [
+    {
+      "id": "INC-001",
+      "kind": "story",
+      "headline": "INC-001",
+      "detail": "Step 1: File 'DESKTOP-ABC123_payload.exe'\n  -> EXECUTED_AS -> DESKTOP-ABC123_8192_payload.exe\nStep 2: Process 'DESKTOP-ABC123_8192_payload.exe'\n  -> CONNECTED_TO -> 192.0.2.47\nStep 3: IP '192.0.2.47'",
+      "severity_label": "Review recommended",
+      "related_event_ids": [
+        "bf001abc-9a76-4fee-b973-b670d80f36bf"
+      ]
+    }
+  ],
+  "raw_suspicious": [
+    {
+      "activity_id": "SUSP-NET-DESKTOP-ABC123_8192_payload.exe-192.0.2.47",
+      "score": 0.85,
+      "rule_name": "Network Execution",
+      "reason": "A newly created or dropped file was executed and established an outbound network connection.",
+      "timestamp": "2026-09-14T16:12:43.078314Z",
+      "evidence_ids": [
+        "bf001abc-9a76-4fee-b973-b670d80f36bf"
+      ],
+      "relationships": [
+        {
+          "source": "DESKTOP-ABC123_payload.exe",
+          "target": "DESKTOP-ABC123_8192_payload.exe",
+          "type": "EXECUTED_AS",
+          "confidence": 0.98
+        },
+        {
+          "source": "DESKTOP-ABC123_8192_payload.exe",
+          "target": "192.0.2.47",
+          "type": "CONNECTED_TO",
+          "confidence": 1.0
+        }
+      ],
+      "nodes": [
+        "DESKTOP-ABC123_payload.exe",
+        "DESKTOP-ABC123_8192_payload.exe",
+        "192.0.2.47"
+      ]
+    },
+    {
+      "activity_id": "SUSP-DIR-DESKTOP-ABC123_8192_payload.exe",
+      "score": 0.7,
+      "rule_name": "Unusual Directory Execution",
+      "reason": "Process executed from a user-writable or temporary directory.",
+      "timestamp": "2026-09-14T16:12:43.078314Z",
+      "evidence_ids": [
+        "bf001abc-9a76-4fee-b973-b670d80f36bf",
+        "bf001abc-9a76-4fee-b973-b670d80f36bf"
+      ],
+      "relationships": [
+        {
+          "source": "DESKTOP-ABC123_payload.exe",
+          "target": "DESKTOP-ABC123_8192_payload.exe",
+          "type": "EXECUTED_AS",
+          "confidence": 0.98
+        }
+      ],
+      "nodes": [
+        "DESKTOP-ABC123_payload.exe",
+        "DESKTOP-ABC123_8192_payload.exe"
+      ]
+    }
+  ],
+  "raw_incidents": [
+    {
+      "incident_id": "INC-001",
+      "nodes": [
+        {
+          "id": "DESKTOP-ABC123_payload.exe",
+          "type": "File",
+          "label": "payload.exe",
+          "subtitle": "File",
+          "host": "DESKTOP-ABC123",
+          "file": "payload.exe"
+        },
+        {
+          "id": "DESKTOP-ABC123_8192_payload.exe",
+          "type": "Process",
+          "label": "payload.exe",
+          "subtitle": "PID 8192",
+          "host": "DESKTOP-ABC123",
+          "pid": "8192",
+          "process": "payload.exe"
+        },
+        {
+          "id": "192.0.2.47",
+          "type": "IP",
+          "label": "192.0.2.47",
+          "subtitle": "Remote IP",
+          "ip": "192.0.2.47"
+        }
+      ],
+      "relationships": [
+        {
+          "source": "DESKTOP-ABC123_payload.exe",
+          "target": "DESKTOP-ABC123_8192_payload.exe",
+          "relationship_type": "EXECUTED_AS",
+          "confidence": 0.98,
+          "evidence_ids": [
+            "bf001abc-9a76-4fee-b973-b670d80f36bf",
+            "bf001abc-9a76-4fee-b973-b670d80f36bf"
+          ],
+          "reasons": [
+            "Matching exact path C:\\Users\\john.doe\\AppData\\Local\\Temp\\payload.exe on host DESKTOP-ABC123",
+            "Events occurred 13.0 seconds apart"
+          ]
+        },
+        {
+          "source": "DESKTOP-ABC123_8192_payload.exe",
+          "target": "192.0.2.47",
+          "relationship_type": "CONNECTED_TO",
+          "confidence": 1.0,
+          "evidence_ids": [
+            "bf001abc-9a76-4fee-b973-b670d80f36bf",
+            "bf001abc-9a76-4fee-b973-b670d80f36bf"
+          ],
+          "reasons": [
+            "Matching PID 8192 on host DESKTOP-ABC123",
+            "Events occurred 4.0 seconds apart",
+            "Process payload.exe (PID 8192) directly established connection to 192.0.2.47"
+          ]
+        }
+      ],
+      "suspicious_activities": [
+        {
+          "activity_id": "SUSP-NET-DESKTOP-ABC123_8192_payload.exe-192.0.2.47",
+          "score": 0.85,
+          "rule_name": "Network Execution",
+          "reason": "A newly created or dropped file was executed and established an outbound network connection.",
+          "timestamp": "2026-09-14T16:12:43.078314Z",
+          "evidence_ids": [
+            "bf001abc-9a76-4fee-b973-b670d80f36bf"
+          ],
+          "relationships": [
+            {
+              "source": "DESKTOP-ABC123_payload.exe",
+              "target": "DESKTOP-ABC123_8192_payload.exe",
+              "type": "EXECUTED_AS",
+              "confidence": 0.98
+            },
+            {
+              "source": "DESKTOP-ABC123_8192_payload.exe",
+              "target": "192.0.2.47",
+              "type": "CONNECTED_TO",
+              "confidence": 1.0
+            }
+          ],
+          "nodes": [
+            "DESKTOP-ABC123_payload.exe",
+            "DESKTOP-ABC123_8192_payload.exe",
+            "192.0.2.47"
+          ]
+        },
+        {
+          "activity_id": "SUSP-DIR-DESKTOP-ABC123_8192_payload.exe",
+          "score": 0.7,
+          "rule_name": "Unusual Directory Execution",
+          "reason": "Process executed from a user-writable or temporary directory.",
+          "timestamp": "2026-09-14T16:12:43.078314Z",
+          "evidence_ids": [
+            "bf001abc-9a76-4fee-b973-b670d80f36bf",
+            "bf001abc-9a76-4fee-b973-b670d80f36bf"
+          ],
+          "relationships": [
+            {
+              "source": "DESKTOP-ABC123_payload.exe",
+              "target": "DESKTOP-ABC123_8192_payload.exe",
+              "type": "EXECUTED_AS",
+              "confidence": 0.98
+            }
+          ],
+          "nodes": [
+            "DESKTOP-ABC123_payload.exe",
+            "DESKTOP-ABC123_8192_payload.exe"
+          ]
+        }
+      ],
+      "status": "Requires Investigation",
+      "evidence_ids": [
+        "bf001abc-9a76-4fee-b973-b670d80f36bf"
+      ],
+      "timeline": "Step 1: File 'DESKTOP-ABC123_payload.exe'\n  -> EXECUTED_AS -> DESKTOP-ABC123_8192_payload.exe\nStep 2: Process 'DESKTOP-ABC123_8192_payload.exe'\n  -> CONNECTED_TO -> 192.0.2.47\nStep 3: IP '192.0.2.47'",
+      "start_time": "Available in Event Details",
+      "end_time": "Available in Event Details",
+      "reconstruction_reason": "Correlated activity chain discovered via deterministic rules."
+    }
+  ],
+  "event_classifications": {
+    "ba78c934-8d23-46ba-8d50-65d1e72bc58d": "SUSPICIOUS_ACTIVITY",
+    "cdec9821-b69a-4eca-8db2-d1622b576072": "SUSPICIOUS_ACTIVITY",
+    "8534e67f-db34-4f93-90d6-8889d0baeea6": "SUSPICIOUS_ACTIVITY",
+    "ecebd97c-acbf-4421-8b9b-6c2e1a6260d7": "SUSPICIOUS_ACTIVITY",
+    "f917504f-8d01-4b16-a2ed-68ca7c84272c": "SUSPICIOUS_ACTIVITY"
+  },
+  "evidence_root": "D:\\D_forensics\\web_data\\evidence"
+}

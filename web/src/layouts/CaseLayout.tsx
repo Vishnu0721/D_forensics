@@ -1,4 +1,7 @@
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useParams } from "react-router-dom";
+import { AppHeader } from "../components/AppHeader";
+import { getCase } from "../api";
 
 const primary = [
   { to: "", label: "Overview", end: true },
@@ -15,19 +18,41 @@ const secondary = [
 
 export function CaseLayout() {
   const { caseId } = useParams();
+  const [caseName, setCaseName] = useState<string | undefined>();
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!caseId) return;
+    let cancelled = false;
+    getCase(caseId)
+      .then((c) => {
+        if (!cancelled) setCaseName(c.name);
+      })
+      .catch(() => {
+        if (!cancelled) setCaseName(undefined);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [caseId]);
 
   return (
-    <div className="shell">
-      <aside className="nav" aria-label="Case navigation">
-        <div className="brand">
-          <p className="brand__name">Digital Forensics</p>
-          <p className="brand__tagline">Investigate evidence clearly</p>
-          <NavLink to="/" className="nav__back">
-            ← All cases
-          </NavLink>
-        </div>
+    <div className="app-frame">
+      <AppHeader caseId={caseId} caseName={caseName} />
+      <div className="shell">
+        <button
+          type="button"
+          className="nav-toggle"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((v) => !v)}
+        >
+          {menuOpen ? "Close menu" : "Case menu"}
+        </button>
 
-        <div>
+        <aside
+          className={menuOpen ? "nav nav--open" : "nav"}
+          aria-label="Case navigation"
+        >
           <p className="nav__section-label">Primary</p>
           <ul className="nav__list">
             {primary.map((item) => (
@@ -35,6 +60,7 @@ export function CaseLayout() {
                 <NavLink
                   to={item.to ? `/cases/${caseId}/${item.to}` : `/cases/${caseId}`}
                   end={item.end}
+                  onClick={() => setMenuOpen(false)}
                   className={({ isActive }) =>
                     isActive ? "nav__link nav__link--active" : "nav__link"
                   }
@@ -44,15 +70,14 @@ export function CaseLayout() {
               </li>
             ))}
           </ul>
-        </div>
 
-        <div>
           <p className="nav__section-label">More</p>
           <ul className="nav__list">
             {secondary.map((item) => (
               <li key={item.to}>
                 <NavLink
                   to={`/cases/${caseId}/${item.to}`}
+                  onClick={() => setMenuOpen(false)}
                   className={({ isActive }) =>
                     isActive ? "nav__link nav__link--active" : "nav__link"
                   }
@@ -62,12 +87,12 @@ export function CaseLayout() {
               </li>
             ))}
           </ul>
-        </div>
-      </aside>
+        </aside>
 
-      <main className="main">
-        <Outlet />
-      </main>
+        <main className="main">
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }

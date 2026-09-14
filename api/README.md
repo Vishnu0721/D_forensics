@@ -19,13 +19,16 @@ Open:
 - Health: http://127.0.0.1:8000/health  
 - Meta: http://127.0.0.1:8000/api/v1/meta  
 
-## Smoke test (Phase 1)
+## Smoke tests
 
 ```powershell
 cd D:\D_forensics
 $env:PYTHONPATH = "D:\D_forensics"
 python api/smoke_phase1.py
+python api/smoke_phase5_7.py
 ```
+
+Phases 0–7 on `feature/webapp`. Uses `web_data/` only.
 
 ## Data isolation
 

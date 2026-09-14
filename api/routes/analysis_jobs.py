@@ -12,6 +12,7 @@ from api.jobs import job_store
 from api.schemas import AnalyzeRequest, JobStatus
 from api.serializers import get_case_or_404
 from api.services.analysis import run_case_analysis
+from api.services.live_monitor import live_monitor
 
 router = APIRouter(tags=["jobs"])
 
@@ -33,7 +34,14 @@ def _run_job(job_id: str, case_id: str, evidence_ids: list[str] | None) -> None:
     db = SessionLocal()
 
     def progress(msg: str) -> None:
-        job_store.update(job_id, status="running", message=msg, progress=min(0.9, (job_store.get(job_id).progress or 0) + 0.05))
+        current = job_store.get(job_id)
+        base = (current.progress if current else 0) or 0
+        job_store.update(
+            job_id,
+            status="running",
+            message=msg,
+            progress=min(0.9, base + 0.05),
+        )
 
     try:
         job_store.update(job_id, status="running", message="Starting analysis", progress=0.05)
@@ -73,8 +81,17 @@ def start_analysis(
     db: Session = Depends(get_db),
 ):
     get_case_or_404(db, case_id)
+    live = live_monitor.status()
+    if live.get("running") and live.get("case_id") == case_id:
+        raise HTTPException(
+            status_code=409,
+            detail="Stop live monitoring before running offline analysis on this case.",
+        )
     evidence_ids = body.evidence_ids if body else None
-    job = job_store.create(case_id)
+    try:
+        job = job_store.create(case_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     thread = threading.Thread(
         target=_run_job,
         args=(job.id, case_id, evidence_ids),

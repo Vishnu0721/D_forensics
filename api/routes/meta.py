@@ -15,7 +15,7 @@ def product_meta() -> dict:
         "tagline": "Investigate evidence clearly",
         "theme": "light",
         "mvp": "offline_import",
-        "live_agent": False,
+        "live_agent": True,
         "auth_required": False,
         "navigation": {
             "primary": [
@@ -35,8 +35,8 @@ def product_meta() -> dict:
             "offline_evidence": "Import evidence",
         },
         "phases": {
-            "current": 3,
-            "next": 4,
+            "current": 7,
+            "next": None,
             "implemented": [
                 "foundations",
                 "health",
@@ -53,6 +53,22 @@ def product_meta() -> dict:
                 "import_wizard",
                 "timeline_ui",
                 "findings_ui",
+                "connections_ui",
+                "integrity_ui",
+                "theme_dark_mode",
+                "full_width_responsive",
+                "tour",
+                "export",
+                "live_agent",
+                "job_locks",
+                "graph_caps",
+                "smoke_tests",
             ],
+        },
+        "data_isolation": {
+            "web_db": "web_data/forensics_web.db",
+            "web_evidence": "web_data/evidence/",
+            "desktop_db": "forensics.db",
+            "desktop_evidence": "data/evidence/",
         },
     }

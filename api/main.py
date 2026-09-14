@@ -10,7 +10,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from api import __version__
 from api.config import get_settings
 from api.db import init_web_db
-from api.routes import analysis_jobs, cases, evidence, events, findings, graph, health, integrity, meta
+from api.routes import (
+    analysis_jobs,
+    cases,
+    evidence,
+    events,
+    export,
+    findings,
+    graph,
+    health,
+    integrity,
+    live,
+    meta,
+)
 
 
 @asynccontextmanager
@@ -26,8 +38,8 @@ app = FastAPI(
     title=settings.app_name,
     version=__version__,
     description=(
-        "Light-theme investigation web API. "
-        "MVP is offline / import-first; live agent is deferred. "
+        "Light-theme investigation web API on feature/webapp. "
+        "Offline import + optional local live agent. "
         "Uses web_data/ only — does not touch the desktop forensics.db."
     ),
     docs_url="/docs",
@@ -52,3 +64,5 @@ app.include_router(events.router)
 app.include_router(findings.router)
 app.include_router(graph.router)
 app.include_router(integrity.router)
+app.include_router(export.router)
+app.include_router(live.router)

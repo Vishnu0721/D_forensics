@@ -21,6 +21,10 @@ KIND_MAP = {
 }
 
 
+MAX_GRAPH_NODES = 250
+MAX_GRAPH_EDGES = 500
+
+
 @router.get("", response_model=GraphResponse)
 def get_graph(
     case_id: str,
@@ -58,7 +62,11 @@ def get_graph(
                     confidence=data.get("confidence"),
                 )
             )
-        return GraphResponse(view="detailed", nodes=nodes, edges=edges)
+        return GraphResponse(
+            view="detailed",
+            nodes=nodes[:MAX_GRAPH_NODES],
+            edges=edges[:MAX_GRAPH_EDGES],
+        )
 
     # Simple view: collapse processes by name
     id_map: dict[str, str] = {}
@@ -98,4 +106,7 @@ def get_graph(
             )
         )
 
-    return GraphResponse(view="simple", nodes=list(label_nodes.values()), edges=edges)
+    node_list = list(label_nodes.values())[:MAX_GRAPH_NODES]
+    keep = {n.id for n in node_list}
+    trimmed_edges = [e for e in edges if e.source in keep and e.target in keep][:MAX_GRAPH_EDGES]
+    return GraphResponse(view="simple", nodes=node_list, edges=trimmed_edges)

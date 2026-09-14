@@ -5,8 +5,10 @@ from __future__ import annotations
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from api.case_meta import load_case_meta
 from api.plain_language import INTEGRITY_LABELS
 from api.schemas import CaseSummary, EvidenceSummary
+from api.services.live_monitor import live_monitor
 from core.database.models import Case, EvidenceArtifact, ForensicEvent
 
 
@@ -22,11 +24,16 @@ def case_summary(db: Session, case: Case) -> CaseSummary:
         db.query(EvidenceArtifact).filter(EvidenceArtifact.case_id == case.id).count()
     )
     event_count = db.query(ForensicEvent).filter(ForensicEvent.case_id == case.id).count()
+    meta = load_case_meta(case.id)
+    live = live_monitor.status()
+    mode = "live" if (live.get("running") and live.get("case_id") == case.id) else meta.get("mode", "imported")
+    if mode not in ("imported", "live"):
+        mode = "imported"
     return CaseSummary(
         id=case.id,
         name=case.name,
         description=case.description,
-        mode="imported",
+        mode=mode,  # type: ignore[arg-type]
         created_at=case.created_at,
         evidence_count=evidence_count,
         event_count=event_count,

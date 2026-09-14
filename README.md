@@ -231,13 +231,14 @@ Light-theme **web app** is in progress on branch `feature/webapp` (`api/` + `web
 | 1 | Cases, upload, analysis jobs, read APIs | **Done** |
 | 2 | Web shell wired to cases / Overview | **Done** |
 | 3 | Import wizard, Timeline, Findings | **Done** |
-| 4 | Connections (graph), Integrity | Planned |
-| 5 | Tour, export, polish | Planned |
-| 6 | Optional local live agent | Later |
+| 4 | Connections (graph), Integrity | **Done** |
+| 5 | Tour, export, polish | **Done** |
+| 6 | Optional local live agent | **Done** |
+| 7 | Hardening & smoke tests | **Done** |
 
 Web data is isolated: `web_data/forensics_web.db` and `web_data/evidence/` (desktop keeps `forensics.db` / `data/`).
 
-See [docs/webapp/PHASE0.md](docs/webapp/PHASE0.md), [api/README.md](api/README.md), [web/README.md](web/README.md).
+See [docs/webapp/PHASE0.md](docs/webapp/PHASE0.md), [docs/webapp/PHASE5_6_7.md](docs/webapp/PHASE5_6_7.md), [api/README.md](api/README.md), [web/README.md](web/README.md).
 
 ## Related Documentation
 

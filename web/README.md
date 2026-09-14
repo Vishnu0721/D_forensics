@@ -36,6 +36,5 @@ See `src/styles/tokens.css` — light surfaces, slate-teal accent, status colors
 
 ## Phase
 
-- **0–2:** foundations, API, case home  
-- **3 (this):** import wizard, Timeline, Findings  
-- **4+:** Connections graph UI, Integrity UI  
+- **0–7 complete** on `feature/webapp` (tour, export, live agent, hardening)
+- Data isolation: `web_data/` only — do not mix with desktop `main` data paths

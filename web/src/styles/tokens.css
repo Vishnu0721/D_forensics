@@ -1,45 +1,89 @@
 /**
- * Light-theme design tokens — Phase 0.
- * Intentionally not a dark SOC palette; academic / lab clarity.
+ * Professional white + blue theme (light default) with dark mode.
  */
 
-:root {
-  /* Surfaces */
-  --df-bg: #f3f5f7;
+:root,
+[data-theme="light"] {
+  --df-bg: #f4f7fb;
+  --df-bg-accent: #e8f0fa;
   --df-surface: #ffffff;
-  --df-surface-muted: #e8eef2;
-  --df-border: #c9d4dc;
-  --df-border-strong: #9aadb8;
+  --df-surface-muted: #eef3f9;
+  --df-border: #c5d4e8;
+  --df-border-strong: #8aa0bf;
 
-  /* Text */
-  --df-text: #1a2b34;
-  --df-text-muted: #5a6f7a;
-  --df-text-inverse: #f7fafb;
+  --df-text: #0f1f33;
+  --df-text-muted: #5a6f8a;
+  --df-text-inverse: #ffffff;
 
-  /* Brand / accent (slate-teal, not purple) */
-  --df-accent: #0f6e6a;
-  --df-accent-hover: #0c5855;
-  --df-accent-soft: #d7eeec;
+  --df-accent: #1a56db;
+  --df-accent-hover: #1648b8;
+  --df-accent-soft: #dbe7ff;
 
-  /* Semantic status — always pair with label text */
-  --df-ok: #1f7a4c;
-  --df-ok-bg: #e6f5ec;
-  --df-warn: #9a6b00;
-  --df-warn-bg: #fff3d6;
+  --df-ok: #0f7a45;
+  --df-ok-bg: #e5f7ee;
+  --df-warn: #9a6400;
+  --df-warn-bg: #fff4d6;
   --df-danger: #b42318;
-  --df-danger-bg: #fde8e6;
-  --df-info: #1d5a8a;
-  --df-info-bg: #e5f1fa;
-  --df-pending: #5a6f7a;
-  --df-pending-bg: #eef2f4;
+  --df-danger-bg: #fdecea;
+  --df-info: #1a56db;
+  --df-info-bg: #e8effc;
+  --df-pending: #5a6f8a;
+  --df-pending-bg: #eef2f6;
 
-  /* Integrity label mapping */
-  --df-status-unchanged: var(--df-ok);
-  --df-status-changed: var(--df-warn);
-  --df-status-missing: var(--df-danger);
-  --df-status-unchecked: var(--df-pending);
+  --df-node-process: #1a56db;
+  --df-node-file: #0f7a45;
+  --df-node-ip: #7c3aed;
+  --df-node-user: #0e7490;
+  --df-node-device: #b45309;
+  --df-node-other: #64748b;
 
-  /* Type */
+  --df-header-bg: rgba(255, 255, 255, 0.92);
+  --df-shadow: 0 1px 2px rgba(15, 31, 51, 0.06), 0 8px 24px rgba(26, 86, 219, 0.04);
+
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --df-bg: #0b1220;
+  --df-bg-accent: #111a2e;
+  --df-surface: #141e30;
+  --df-surface-muted: #1a2538;
+  --df-border: #2a3a55;
+  --df-border-strong: #3d5275;
+
+  --df-text: #e8eef8;
+  --df-text-muted: #9aacc4;
+  --df-text-inverse: #ffffff;
+
+  --df-accent: #5b8def;
+  --df-accent-hover: #7aa3f5;
+  --df-accent-soft: #1a2f55;
+
+  --df-ok: #34d399;
+  --df-ok-bg: #0f2a1e;
+  --df-warn: #fbbf24;
+  --df-warn-bg: #2a2208;
+  --df-danger: #f87171;
+  --df-danger-bg: #2a1212;
+  --df-info: #5b8def;
+  --df-info-bg: #15233f;
+  --df-pending: #9aacc4;
+  --df-pending-bg: #1a2538;
+
+  --df-node-process: #5b8def;
+  --df-node-file: #34d399;
+  --df-node-ip: #a78bfa;
+  --df-node-user: #22d3ee;
+  --df-node-device: #fbbf24;
+  --df-node-other: #94a3b8;
+
+  --df-header-bg: rgba(11, 18, 32, 0.92);
+  --df-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 24px rgba(0, 0, 0, 0.25);
+
+  color-scheme: dark;
+}
+
+:root {
   --df-font-sans: "IBM Plex Sans", "Segoe UI", sans-serif;
   --df-font-display: "Source Serif 4", Georgia, serif;
   --df-font-mono: "IBM Plex Mono", "Consolas", monospace;
@@ -50,22 +94,17 @@
   --df-text-lg: 1.25rem;
   --df-text-xl: 1.75rem;
 
-  /* Spacing & radius */
   --df-space-1: 0.25rem;
   --df-space-2: 0.5rem;
   --df-space-3: 0.75rem;
   --df-space-4: 1rem;
   --df-space-5: 1.5rem;
   --df-space-6: 2rem;
-  --df-radius: 6px;
-  --df-radius-lg: 10px;
+  --df-radius: 8px;
+  --df-radius-lg: 12px;
 
-  /* Layout */
-  --df-nav-width: 14rem;
-  --df-max-content: 72rem;
-  --df-shadow: 0 1px 2px rgba(26, 43, 52, 0.06);
-
-  color-scheme: light;
+  --df-nav-width: 15rem;
+  --df-header-height: 3.75rem;
 }
 
 *,
@@ -78,6 +117,7 @@ html,
 body,
 #root {
   min-height: 100%;
+  width: 100%;
 }
 
 body {
@@ -87,8 +127,8 @@ body {
   line-height: 1.5;
   color: var(--df-text);
   background:
-    radial-gradient(ellipse 80% 50% at 100% 0%, #dceeea 0%, transparent 55%),
-    radial-gradient(ellipse 60% 40% at 0% 100%, #e4ebf2 0%, transparent 50%),
+    radial-gradient(ellipse 70% 45% at 100% -10%, var(--df-accent-soft) 0%, transparent 55%),
+    radial-gradient(ellipse 50% 35% at 0% 100%, var(--df-bg-accent) 0%, transparent 50%),
     var(--df-bg);
 }
 

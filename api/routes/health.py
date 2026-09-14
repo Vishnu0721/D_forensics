@@ -14,7 +14,7 @@ def health() -> dict:
     settings = get_settings()
     return {
         "status": "ok",
-        "phase": 3,
+        "phase": 7,
         "data_root": str(settings.data_root),
         "database_url": settings.database_url,
     }

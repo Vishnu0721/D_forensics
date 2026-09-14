@@ -1,9 +1,10 @@
-"""In-memory analysis job tracker (Phase 1)."""
+"""In-memory analysis job tracker with per-case locking (Phase 7 hardening)."""
 
 from __future__ import annotations
 
 import threading
 import uuid
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -23,15 +24,35 @@ class JobRecord:
 
 
 class JobStore:
+    """Bounded job history + one active analysis per case."""
+
+    MAX_JOBS = 200
+
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._jobs: dict[str, JobRecord] = {}
+        self._jobs: OrderedDict[str, JobRecord] = OrderedDict()
+        self._case_active: dict[str, str] = {}  # case_id -> job_id
 
     def create(self, case_id: str) -> JobRecord:
-        job = JobRecord(id=str(uuid.uuid4()), case_id=case_id)
         with self._lock:
+            active_id = self._case_active.get(case_id)
+            if active_id:
+                active = self._jobs.get(active_id)
+                if active and active.status in ("queued", "running"):
+                    raise RuntimeError(
+                        "An analysis job is already running for this case. Wait for it to finish."
+                    )
+            job = JobRecord(id=str(uuid.uuid4()), case_id=case_id)
             self._jobs[job.id] = job
-        return job
+            self._case_active[case_id] = job.id
+            while len(self._jobs) > self.MAX_JOBS:
+                old_id, old = self._jobs.popitem(last=False)
+                if old.status in ("queued", "running"):
+                    # Don't evict active — put back and stop
+                    self._jobs[old_id] = old
+                    self._jobs.move_to_end(old_id)
+                    break
+            return job
 
     def get(self, job_id: str) -> Optional[JobRecord]:
         with self._lock:
@@ -45,7 +66,17 @@ class JobStore:
             for key, value in kwargs.items():
                 setattr(job, key, value)
             job.updated_at = datetime.now(timezone.utc)
+            if job.status in ("completed", "failed"):
+                if self._case_active.get(job.case_id) == job_id:
+                    self._case_active.pop(job.case_id, None)
             return job
+
+    def active_for_case(self, case_id: str) -> Optional[JobRecord]:
+        with self._lock:
+            job_id = self._case_active.get(case_id)
+            if not job_id:
+                return None
+            return self._jobs.get(job_id)
 
 
 job_store = JobStore()

@@ -175,3 +175,85 @@ export function getEvent(caseId: string, eventId: string) {
 export function listFindings(caseId: string) {
   return request<FindingsResponse>(`/api/v1/cases/${caseId}/findings`);
 }
+
+export type GraphView = "simple" | "detailed";
+
+export type GraphNode = {
+  id: string;
+  label: string;
+  kind: string;
+  story: string;
+};
+
+export type GraphEdge = {
+  id: string;
+  source: string;
+  target: string;
+  relationship: string;
+  confidence?: number | null;
+};
+
+export type GraphResponse = {
+  view: GraphView;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+};
+
+export type IntegrityRow = {
+  evidence_id: string;
+  what: string;
+  sha256_hash: string;
+  status: string;
+  status_label: string;
+  collected_at?: string | null;
+};
+
+export type IntegrityResponse = {
+  items: IntegrityRow[];
+  legend: Record<string, string>;
+};
+
+export function getGraph(caseId: string, view: GraphView = "simple") {
+  return request<GraphResponse>(`/api/v1/cases/${caseId}/graph?view=${view}`);
+}
+
+export function listIntegrity(caseId: string) {
+  return request<IntegrityResponse>(`/api/v1/cases/${caseId}/integrity`);
+}
+
+export function verifyIntegrity(caseId: string) {
+  return request<IntegrityResponse>(`/api/v1/cases/${caseId}/integrity`, {
+    method: "POST",
+  });
+}
+
+export type LiveStatus = {
+  available: boolean;
+  running: boolean;
+  case_id?: string | null;
+  started_at?: string | null;
+  events_captured: number;
+  last_error?: string | null;
+  collectors?: string[];
+  note?: string;
+  this_case_active?: boolean;
+};
+
+export function getLiveStatus(caseId?: string) {
+  if (caseId) {
+    return request<LiveStatus>(`/api/v1/cases/${caseId}/live`);
+  }
+  return request<LiveStatus>("/api/v1/live/status");
+}
+
+export function startLive(caseId: string) {
+  return request<LiveStatus>(`/api/v1/cases/${caseId}/live/start`, { method: "POST" });
+}
+
+export function stopLive(caseId: string) {
+  return request<LiveStatus>(`/api/v1/cases/${caseId}/live/stop`, { method: "POST" });
+}
+
+export function exportCaseUrl(caseId: string, format: "markdown" | "html" = "markdown") {
+  return `/api/v1/cases/${caseId}/export?format=${format}`;
+}

@@ -13,7 +13,7 @@ from api.main import app
 def main() -> None:
     client = TestClient(app)
     health = client.get("/health").json()
-    assert health["phase"] == 3, health
+    assert health["phase"] == 7, health
 
     created = client.post(
         "/api/v1/cases",

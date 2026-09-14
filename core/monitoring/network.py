@@ -70,8 +70,8 @@ class NetworkCollector(BaseCollector):
             except psutil.AccessDenied:
                 # If psutil.net_connections itself fails, we could fallback to netstat, but for now we note it.
                 print("NetworkCollector: AccessDenied when polling connections. PID mapping unavailable.")
-                time.sleep(self.poll_interval * 2)
+                self.interruptible_sleep(self.poll_interval * 2)
             except Exception as e:
                 print(f"NetworkCollector error: {e}")
                 
-            time.sleep(self.poll_interval)
+            self.interruptible_sleep(self.poll_interval)

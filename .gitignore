@@ -26,6 +26,9 @@ htmlcov/
 # Database and local data
 forensics.db
 *.db
+data/evidence/
+data/*_graph.json
+data/.quick_tour_seen
 
 # Operating system files
 .DS_Store

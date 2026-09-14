@@ -150,6 +150,11 @@ class OfflineAnalysisDialog(QDialog):
             self._offline_thread.deleteLater()
             self._offline_thread = None
 
+    def closeEvent(self, event):
+        if hasattr(self, "graph_widget"):
+            self.graph_widget.cleanup()
+        super().closeEvent(event)
+
     def _render_summary(self, result: OfflineAnalysisResult):
         summ = result.summary_dict()
         html = "<h3 style='color: #1565c0;'>OFFLINE FORENSIC ANALYSIS SUMMARY</h3>"

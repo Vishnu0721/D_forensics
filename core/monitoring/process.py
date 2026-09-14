@@ -79,11 +79,17 @@ class ProcessCollector(BaseCollector):
                         if exe_path and exe_path != "Unavailable":
                             try:
                                 import hashlib
-                                h = hashlib.sha256()
-                                with open(exe_path, "rb") as f:
-                                    for byte_block in iter(lambda: f.read(8192), b""):
-                                        h.update(byte_block)
-                                sha256_hash = h.hexdigest()
+                                import os
+                                if os.path.getsize(exe_path) <= 8 * 1024 * 1024:
+                                    h = hashlib.sha256()
+                                    with open(exe_path, "rb") as f:
+                                        for byte_block in iter(lambda: f.read(8192), b""):
+                                            if not self._is_running:
+                                                break
+                                            h.update(byte_block)
+                                    sha256_hash = h.hexdigest()
+                                else:
+                                    sha256_hash = "skipped_large_file"
                             except Exception:
                                 sha256_hash = "Unavailable"
                                 
@@ -114,5 +120,5 @@ class ProcessCollector(BaseCollector):
             except Exception as e:
                 print(f"ProcessCollector error: {e}")
                 
-            # Wait for next poll cycle
-            time.sleep(self.poll_interval)
+            # Wait for next poll cycle without blocking Stop for the full interval
+            self.interruptible_sleep(self.poll_interval)

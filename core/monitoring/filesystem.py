@@ -5,11 +5,77 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from .base import BaseCollector
 
+NOISY_PATH_MARKERS = (
+    "\\appdata\\local\\packages\\",
+    "\\appdata\\roaming\\cursor\\",
+    "\\appdata\\roaming\\code\\",
+    "\\appdata\\local\\google\\chrome\\user data\\",
+    "\\appdata\\local\\microsoft\\edge\\user data\\",
+    "\\appdata\\local\\mozilla\\firefox\\",
+    "\\appdata\\local\\pip\\",
+    "\\__pycache__\\",
+    "\\node_modules\\",
+    "\\.git\\",
+    "\\sentry\\",
+    "\\code cache\\",
+    "\\gpucache\\",
+    "\\gpuCache\\",
+    "\\service worker\\",
+    "\\ebwebview\\",
+    "\\cursor\\snapshots\\",
+    "\\windows\\system32\\logfiles\\",
+    "\\windows\\system32\\wbem\\logs\\",
+    "\\windows\\system32\\winevt\\",
+    "\\inetcache\\",
+)
+
+NOISY_NAME_PREFIXES = ("~", ".")
+NOISY_EXTENSIONS = (
+    ".tmp", ".temp", ".lock", ".ldb", ".log", ".pyc", ".pyo",
+    ".pack", ".idx", ".wal", ".shm", ".journal",
+)
+
+
 class ForensicFileEventHandler(FileSystemEventHandler):
     def __init__(self, callback, exclusions=None):
         super().__init__()
         self.callback = callback
         self.exclusions = exclusions or []
+        self._last_emit = {}
+        self._recent_times = []
+
+    def _is_noisy_path(self, abs_path: str) -> bool:
+        path_lower = abs_path.lower()
+        for marker in NOISY_PATH_MARKERS:
+            if marker in path_lower:
+                return True
+        filename = os.path.basename(path_lower)
+        _, ext = os.path.splitext(filename)
+        in_high_churn_dir = (
+            "\\appdata\\" in path_lower
+            or "\\temp\\" in path_lower
+            or "\\windows\\system32\\" in path_lower
+        )
+        if in_high_churn_dir and ext in NOISY_EXTENSIONS:
+            return True
+        return False
+
+    def _should_drop(self, event_type: str, abs_path: str) -> bool:
+        now = time.time()
+        self._recent_times = [t for t in self._recent_times if now - t < 1.0]
+        if len(self._last_emit) > 4000:
+            self._last_emit.clear()
+
+        last = self._last_emit.get(abs_path)
+        if last and last[0] == event_type and (now - last[1]) < 1.5:
+            return True
+
+        if event_type == "file_modified" and len(self._recent_times) > 25:
+            return True
+
+        self._last_emit[abs_path] = (event_type, now)
+        self._recent_times.append(now)
+        return False
         
     def on_created(self, event):
         if not event.is_directory:
@@ -39,6 +105,9 @@ class ForensicFileEventHandler(FileSystemEventHandler):
             return
             
         abs_path = os.path.abspath(path).lower()
+
+        if self._is_noisy_path(abs_path):
+            return
         
         # Check exclusions (infrastructure)
         for excl in self.exclusions:
@@ -46,6 +115,9 @@ class ForensicFileEventHandler(FileSystemEventHandler):
             if abs_path == excl_lower or abs_path.startswith(excl_lower + os.sep):
                 print(f"FILESYSTEM EVENT IGNORED:\npath={abs_path}\nreason=application infrastructure")
                 return
+
+        if self._should_drop(event_type, abs_path):
+            return
             
         try:
             user = os.getlogin()
@@ -113,6 +185,9 @@ class ForensicFileEventHandler(FileSystemEventHandler):
             
         abs_old_path = os.path.abspath(old_path).lower()
         abs_new_path = os.path.abspath(new_path).lower()
+
+        if self._is_noisy_path(abs_new_path) or self._is_noisy_path(abs_old_path):
+            return
         
         # Check exclusions (infrastructure)
         for excl in self.exclusions:
@@ -120,6 +195,9 @@ class ForensicFileEventHandler(FileSystemEventHandler):
             if abs_new_path == excl_lower or abs_new_path.startswith(excl_lower + os.sep) or abs_old_path == excl_lower or abs_old_path.startswith(excl_lower + os.sep):
                 print(f"FILESYSTEM EVENT IGNORED:\npath={abs_new_path}\nreason=application infrastructure")
                 return
+
+        if self._should_drop(event_type, abs_new_path):
+            return
             
         try:
             user = os.getlogin()
@@ -229,7 +307,17 @@ class FilesystemCollector(BaseCollector):
         
         # Keep the QThread alive while monitoring
         while self._is_running:
-            time.sleep(1)
+            time.sleep(0.2)
             
-        self.observer.stop()
-        self.observer.join()
+        if self.observer:
+            self.observer.stop()
+            self.observer.join(timeout=2)
+
+    def stop_monitoring(self):
+        self._is_running = False
+        observer = self.observer
+        if observer is not None:
+            try:
+                observer.stop()
+            except Exception:
+                pass

@@ -3,26 +3,38 @@ import datetime
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QFrame, QListWidget, QTableWidget,
-    QTableWidgetItem, QGroupBox, QSplitter, QHeaderView, QTextEdit, QTabWidget,
-    QComboBox, QFileDialog, QMessageBox, QDialog, QDialogButtonBox, QFormLayout
+    QTableWidgetItem, QSplitter, QHeaderView, QTextEdit, QTabWidget,
+    QComboBox, QFileDialog, QMessageBox, QDialog
 )
-from PySide6.QtCore import Qt, QTimer, Slot, QThread
+from PySide6.QtCore import Qt, QTimer, Slot, QThread, Signal
 from PySide6.QtGui import QFont, QColor
 
 from core.database import init_db, get_db, Case
 from core.database.models import ForensicEvent, EvidenceArtifact
 from core.services.graph import EvidenceGraph
-from core.services.correlation import correlate_events, correlate_new_event
-from core.services.reconstruction import reconstruct_incidents
-from core.services.timeline import generate_timeline
 from core.monitoring.manager import MonitoringManager
 from core.services.classification import ClassificationEngine
 from core.services.correlation import CorrelationWorker
 from core.services.offline_analysis import OfflineAnalysisResult
 from gui.offline_analysis_window import OfflineAnalysisDialog
-from core.services.integrity import verify_integrity
 from gui.graph_view import InteractiveGraphWidget
-from PySide6.QtCore import Signal
+from gui.event_language import (
+    FILTER_OPTIONS,
+    FILTER_LABEL_TO_KEY,
+    format_event_sentence,
+    format_event_summary_html,
+    format_event_advanced_html,
+    event_item_color,
+    filter_matches,
+)
+from gui.incident_language import (
+    format_suspicious_item,
+    format_suspicious_detail_html,
+    format_incidents_page_html,
+    severity_color,
+)
+from gui.integrity_ui import human_source_label, map_status_display, STATUS_HELP
+from gui.quick_tour import QuickTourDialog, should_show_tour, mark_tour_seen
 
 class MainWindow(QMainWindow):
     batch_ready = Signal(list)
@@ -50,6 +62,11 @@ class MainWindow(QMainWindow):
         self.cached_suspicious = []
         self.cached_incidents = []
         self.graph_version = 0
+        self._latest_graph_snapshot = None
+        self._stat_events = 0
+        self._stat_evidence = 0
+        self._last_event_at = None
+        self._session_event_count = 0
 
         # Setup Monitoring Manager
         self.monitor = MonitoringManager(self.current_case.id)
@@ -74,6 +91,7 @@ class MainWindow(QMainWindow):
         self._current_offline_result: OfflineAnalysisResult = None
 
         self.setup_ui()
+        self._setup_menu()
 
         # Setup timer for periodic UI stat polling
         self.update_timer = QTimer(self)
@@ -90,19 +108,44 @@ class MainWindow(QMainWindow):
         self.save_timer.timeout.connect(self.graph_db.save)
         self.save_timer.start(10000)
 
+        # Coalesce graph redraws so correlation bursts cannot freeze the UI
+        self._graph_refresh_timer = QTimer(self)
+        self._graph_refresh_timer.setSingleShot(True)
+        self._graph_refresh_timer.setInterval(250)
+        self._graph_refresh_timer.timeout.connect(self._refresh_graph_view)
+
         # Populate integrity table with existing evidence on startup
         self.populate_integrity_table()
+        self._refresh_stat_counts_from_db()
 
         self.poll_stats()
         self.update_incidents_ui()
 
+        if should_show_tour():
+            QTimer.singleShot(500, self._show_quick_tour)
+
+    def _show_quick_tour(self):
+        dlg = QuickTourDialog(self)
+        dlg.exec()
+        mark_tour_seen()
+
     def closeEvent(self, event):
+        self.update_timer.stop()
+        self.ui_refresh_timer.stop()
+        self.save_timer.stop()
+        self._graph_refresh_timer.stop()
         if self.is_monitoring:
-            self.stop_monitoring()
+            # Skip auto-verify on exit — hashing many files can delay close.
+            self.stop_monitoring(auto_verify=False)
+        if hasattr(self, "graph_widget"):
+            self.graph_widget.cleanup()
         self.correlation_thread.quit()
-        self.correlation_thread.wait()
+        self.correlation_thread.wait(2000)
         self.monitor.shutdown()
-        self.graph_db.save()
+        try:
+            self.graph_db.save()
+        except Exception as e:
+            print(f"Failed to save graph on close: {e}")
         super().closeEvent(event)
 
     def setup_ui(self):
@@ -128,28 +171,35 @@ class MainWindow(QMainWindow):
         # 2. Controls Toolbar
         toolbar_layout = QHBoxLayout()
         
-        self.btn_start = QPushButton("▶ START MONITORING")
-        self.btn_start.setStyleSheet("background-color: #2e7d32; color: white; font-weight: bold; padding: 8px;")
-        self.btn_start.clicked.connect(self.start_monitoring)
-        
-        self.btn_stop = QPushButton("■ STOP MONITORING")
-        self.btn_stop.setStyleSheet("background-color: #c62828; color: white; font-weight: bold; padding: 8px;")
-        self.btn_stop.setEnabled(False)
-        self.btn_stop.clicked.connect(self.stop_monitoring)
+        self.btn_monitor = QPushButton("▶ START MONITORING")
+        self.btn_monitor.setStyleSheet("background-color: #2e7d32; color: white; font-weight: bold; padding: 8px 16px;")
+        self.btn_monitor.clicked.connect(self.toggle_monitoring)
         
         self.btn_verify = QPushButton("Verify Integrity")
-        self.btn_verify.clicked.connect(self.verify_integrity)
+        self.btn_verify.clicked.connect(lambda: self.verify_integrity())
         self.btn_offline = QPushButton("Offline Evidence (Advanced)")
         self.btn_offline.clicked.connect(self.on_offline_evidence_clicked)
         self.btn_offline.setStyleSheet("background-color: #1565c0; color: white; font-weight: bold; padding: 8px;")
 
-        toolbar_layout.addWidget(self.btn_start)
-        toolbar_layout.addWidget(self.btn_stop)
+        toolbar_layout.addWidget(self.btn_monitor)
         toolbar_layout.addWidget(self.btn_verify)
         toolbar_layout.addWidget(self.btn_offline)
         toolbar_layout.addStretch()
         
         main_layout.addLayout(toolbar_layout)
+
+        self.monitor_banner = QFrame()
+        self.monitor_banner.setFrameShape(QFrame.Shape.StyledPanel)
+        banner_layout = QVBoxLayout(self.monitor_banner)
+        banner_layout.setContentsMargins(12, 8, 12, 8)
+        self.monitor_state_label = QLabel()
+        self.monitor_state_label.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
+        self.monitor_detail_label = QLabel()
+        self.monitor_detail_label.setWordWrap(True)
+        banner_layout.addWidget(self.monitor_state_label)
+        banner_layout.addWidget(self.monitor_detail_label)
+        main_layout.addWidget(self.monitor_banner)
+        self._update_monitor_banner()
         
         # Line separator
         line = QFrame()
@@ -181,10 +231,18 @@ class MainWindow(QMainWindow):
 
         # Tab 1: Suspicious Activity
         self.suspicious_list = QListWidget()
-        self.suspicious_list.setStyleSheet("background-color: #2b0000; color: #ff6b6b; font-family: Consolas; font-size: 13px;")
+        self.suspicious_list.setStyleSheet(
+            "background-color: #1a1a1a; color: #eeeeee; font-family: Segoe UI; font-size: 13px;"
+        )
         self.suspicious_list.setWordWrap(True)
         self.suspicious_list.itemClicked.connect(self.on_suspicious_clicked)
-        self.left_tabs.addTab(self.suspicious_list, "SUSPICIOUS ACTIVITY")
+        self.suspicious_list.addItem(
+            "Nothing unusual flagged yet.\n\n"
+            "This list fills when the app finds patterns that may need attention "
+            "(for example a new file that runs and then contacts the internet).\n\n"
+            "Open the Activity tab to see live captures."
+        )
+        self.left_tabs.addTab(self.suspicious_list, "Needs attention")
 
         # Tab 2: Event Stream
         all_events_widget = QWidget()
@@ -192,28 +250,39 @@ class MainWindow(QMainWindow):
         all_events_layout.setContentsMargins(0, 0, 0, 0)
 
         filter_layout = QHBoxLayout()
-        filter_layout.addWidget(QLabel("Filter:"))
+        filter_layout.addWidget(QLabel("Show:"))
         self.event_filter_combo = QComboBox()
-        self.event_filter_combo.addItems(["ALL EVENTS", "USER ACTIVITY", "BACKGROUND", "SUSPICIOUS", "CORRELATED", "UNKNOWN", "INCIDENT RELATED"])
-        self.event_filter_combo.setCurrentText("USER ACTIVITY")
+        for label, _key in FILTER_OPTIONS:
+            self.event_filter_combo.addItem(label)
+        self.event_filter_combo.setCurrentText("All activity")
         self.event_filter_combo.currentTextChanged.connect(self.apply_event_filter)
         filter_layout.addWidget(self.event_filter_combo)
         filter_layout.addStretch()
         all_events_layout.addLayout(filter_layout)
+
+        self.filter_help_label = QLabel()
+        self.filter_help_label.setStyleSheet("color: #888; font-size: 11px; padding: 2px 0;")
+        self.filter_help_label.setWordWrap(True)
+        all_events_layout.addWidget(self.filter_help_label)
         
         self.live_stream = QListWidget()
-        self.live_stream.setStyleSheet("background-color: #1e1e1e; color: #00ff00; font-family: Consolas;")
+        self.live_stream.setStyleSheet(
+            "background-color: #1e1e1e; color: #e8e8e8; font-family: Segoe UI; font-size: 13px;"
+        )
         self.live_stream.itemClicked.connect(self.on_event_clicked)
         
         self.timeline_list = QListWidget()
+        self.timeline_list.setStyleSheet("font-family: Segoe UI; font-size: 12px;")
         self.timeline_list.itemClicked.connect(self.on_event_clicked)
         
-        all_events_layout.addWidget(QLabel("LIVE EVENT STREAM"))
+        all_events_layout.addWidget(QLabel("Activity stream (what just happened)"))
         all_events_layout.addWidget(self.live_stream, stretch=2)
-        all_events_layout.addWidget(QLabel("RECENT TIMELINE"))
+        all_events_layout.addWidget(QLabel("Recent activity"))
         all_events_layout.addWidget(self.timeline_list, stretch=1)
         
-        self.left_tabs.addTab(all_events_widget, "EVENT STREAM")
+        self.left_tabs.addTab(all_events_widget, "Activity")
+        self.left_tabs.setCurrentIndex(1)
+        self._update_filter_help()
         
         left_layout.addWidget(self.left_tabs)
         
@@ -234,30 +303,54 @@ class MainWindow(QMainWindow):
         # Tab 2: Incident Reconstruction (Text)
         self.incident_view = QTextEdit()
         self.incident_view.setReadOnly(True)
-        self.incident_view.setHtml("<p style='color: gray;'>Waiting for events...</p>")
+        self.incident_view.setHtml(
+            "<p style='color: gray;'>Incident stories appear after the app links related activity "
+            "(for example a program contacting the internet).</p>"
+        )
         self.right_tabs.addTab(self.incident_view, "Incident Summary")
         
         # Tab 3: Event Details
         self.event_details_view = QTextEdit()
         self.event_details_view.setReadOnly(True)
-        self.event_details_view.setHtml("<p style='color: gray;'>Select an event from the stream to view details.</p>")
+        self.event_details_view.setHtml(
+            "<p style='color: gray;'>Select an activity line on the left to see a plain-language summary.</p>"
+        )
         self.right_tabs.addTab(self.event_details_view, "Event Details")
-        
-        right_layout.addWidget(self.right_tabs, stretch=2)
-        
-        # Integrity
-        grp_integrity = QGroupBox("EVIDENCE INTEGRITY")
-        integrity_layout = QVBoxLayout(grp_integrity)
+
+        integrity_widget = QWidget()
+        integrity_layout = QVBoxLayout(integrity_widget)
+        integrity_layout.setContentsMargins(4, 4, 4, 4)
         self.integrity_table = QTableWidget(0, 6)
-        self.integrity_table.setHorizontalHeaderLabels(["Evidence ID", "Source", "Original Hash", "Current Hash", "Status", "Time"])
+        self.integrity_table.setHorizontalHeaderLabels(
+            ["Evidence ID", "What it is", "Original fingerprint", "Current fingerprint", "Status", "Collected"]
+        )
         self.integrity_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        integrity_layout.addWidget(self.integrity_table)
-        right_layout.addWidget(grp_integrity, stretch=1)
+        integrity_layout.addWidget(self.integrity_table, stretch=1)
+        self.integrity_help_label = QLabel(
+            "<b>Status meanings:</b> "
+            "<span style='color:#2e7d32;'>Unchanged</span> = file still matches its fingerprint · "
+            "<span style='color:#c62828;'>Changed on disk</span> = do not trust alone · "
+            "<span style='color:#e67e22;'>File missing</span> = original path unreadable · "
+            "<span style='color:#757575;'>Not checked yet</span> = click Verify Integrity or stop monitoring."
+        )
+        self.integrity_help_label.setWordWrap(True)
+        self.integrity_help_label.setStyleSheet("color: #555; font-size: 11px; padding: 6px 0;")
+        integrity_layout.addWidget(self.integrity_help_label)
+        self.right_tabs.addTab(integrity_widget, "Evidence Integrity")
+        
+        right_layout.addWidget(self.right_tabs, stretch=1)
         
         splitter.addWidget(right_widget)
+        splitter.setStretchFactor(0, 2)
+        splitter.setStretchFactor(1, 3)
         
         # Add Splitter to main
         main_layout.addWidget(splitter, stretch=1)
+
+    def _setup_menu(self):
+        help_menu = self.menuBar().addMenu("Help")
+        tour_action = help_menu.addAction("Quick tour (30 seconds)")
+        tour_action.triggered.connect(self._show_quick_tour)
         
     def create_stat_widget(self, title, value, parent_layout):
         container = QFrame()
@@ -277,65 +370,127 @@ class MainWindow(QMainWindow):
         parent_layout.addWidget(container)
         return lbl_value
 
+    def _update_monitor_banner(self):
+        if self.is_monitoring:
+            collectors = self.monitor.collector_status()
+            parts = []
+            for item in collectors:
+                mark = "ON" if item["running"] else "starting…"
+                parts.append(f"{item['name']} {mark}")
+            collector_text = "  ·  ".join(parts) if parts else "collectors starting…"
+            last = "waiting for the first event"
+            if self._last_event_at:
+                age = max(0, int((datetime.datetime.utcnow() - self._last_event_at).total_seconds()))
+                if age < 3:
+                    last = "event just now — collectors are live"
+                else:
+                    last = f"last event {age}s ago"
+            self.monitor_banner.setStyleSheet(
+                "QFrame { background-color: #e8f5e9; border: 2px solid #2e7d32; border-radius: 4px; }"
+            )
+            self.monitor_state_label.setStyleSheet("color: #1b5e20;")
+            self.monitor_state_label.setText("LIVE — this PC is being monitored")
+            self.monitor_detail_label.setStyleSheet("color: #33691e;")
+            next_step = (
+                "Next: watch Activity stream on the left. "
+                "Open a browser or create a file to generate events. "
+                "Links on the Evidence Graph appear when a program contacts the internet."
+            )
+            self.monitor_detail_label.setText(
+                f"Watching this PC only (local collectors, not a remote agent).  "
+                f"{collector_text}.  {last}.  "
+                f"This session: {self._session_event_count} events.  "
+                f"Click Stop to pause.  {next_step}"
+            )
+            self.setWindowTitle("Evidence-Backed Forensic Monitor  [LIVE]")
+            self.status_label.setText("● LIVE")
+            self.status_label.setStyleSheet("color: #2e7d32; font-weight: bold; font-size: 14px;")
+            self.btn_monitor.setText("■ STOP MONITORING")
+            self.btn_monitor.setStyleSheet("background-color: #c62828; color: white; font-weight: bold; padding: 8px 16px;")
+        else:
+            self.monitor_banner.setStyleSheet(
+                "QFrame { background-color: #f5f5f5; border: 2px solid #9e9e9e; border-radius: 4px; }"
+            )
+            self.monitor_state_label.setStyleSheet("color: #424242;")
+            self.monitor_state_label.setText("STOPPED — not capturing live activity")
+            self.monitor_detail_label.setStyleSheet("color: #616161;")
+            self.monitor_detail_label.setText(
+                "Not capturing right now. Saved evidence stays in the database. "
+                "Next: click Start Monitoring, then open a program or save a file — "
+                "activity will appear in the Activity stream."
+            )
+            self.setWindowTitle("Evidence-Backed Forensic Monitor  [STOPPED]")
+            self.status_label.setText("● STOPPED")
+            self.status_label.setStyleSheet("color: #c62828; font-weight: bold; font-size: 14px;")
+            self.btn_monitor.setText("▶ START MONITORING")
+            self.btn_monitor.setStyleSheet("background-color: #2e7d32; color: white; font-weight: bold; padding: 8px 16px;")
+
+    def toggle_monitoring(self):
+        if self.is_monitoring:
+            self.stop_monitoring()
+        else:
+            self.start_monitoring()
+
     def start_monitoring(self):
         self.is_monitoring = True
-        self.status_label.setText("● STATUS: MONITORING")
-        self.status_label.setStyleSheet("color: #2e7d32; font-weight: bold; font-size: 14px;")
-        self.btn_start.setEnabled(False)
-        self.btn_stop.setEnabled(True)
-        self.live_stream.insertItem(0, ">>> Monitoring Initialized. Awaiting telemetry...")
+        self._session_event_count = 0
+        self._last_event_at = None
+        self.left_tabs.setCurrentIndex(1)
+        self.event_filter_combo.setCurrentText("All activity")
+        self.live_stream.insertItem(0, "▶ Started — watching programs, files, and network on this PC…")
         self.monitor.start_all()
+        self._update_monitor_banner()
+        self._update_filter_help()
 
-    def stop_monitoring(self):
+    def stop_monitoring(self, auto_verify: bool = True):
         self.is_monitoring = False
-        self.status_label.setText("● STATUS: STOPPED")
-        self.status_label.setStyleSheet("color: #c62828; font-weight: bold; font-size: 14px;")
-        self.btn_start.setEnabled(True)
-        self.btn_stop.setEnabled(False)
-        self.live_stream.insertItem(0, ">>> Monitoring Stopped.")
+        self.live_stream.insertItem(0, "■ Stopped — no longer capturing new activity.")
         self.monitor.stop_all()
+        self._update_monitor_banner()
+        self._update_filter_help()
+        if auto_verify:
+            QTimer.singleShot(200, self._auto_verify_integrity)
 
-    def verify_integrity(self):
-        from core.services.integrity import verify_all_evidence
-        results = verify_all_evidence(self.db, self.current_case.id)
-        
-        self.integrity_table.setRowCount(0)
-        
-        for row, res in enumerate(results):
-            self.integrity_table.insertRow(row)
-            self.integrity_table.setItem(row, 0, QTableWidgetItem(res["evidence_id"]))
-            self.integrity_table.setItem(row, 1, QTableWidgetItem(res["source"]))
-            self.integrity_table.setItem(row, 2, QTableWidgetItem(res["original_hash"][:12] + "..."))
-            self.integrity_table.setItem(row, 3, QTableWidgetItem(res["current_hash"][:12] + "..."))
-            
-            status_item = QTableWidgetItem(res["status"])
-            if res["status"] == "VALID":
-                status_item.setForeground(QColor("#2ecc71"))
-            elif res["status"] == "MODIFIED":
-                status_item.setForeground(QColor("#e74c3c"))
+    def _auto_verify_integrity(self):
+        try:
+            self.verify_integrity(silent=True)
+        except Exception as e:
+            print(f"Auto integrity check failed: {e}")
+
+    def _current_filter_key(self) -> str:
+        return FILTER_LABEL_TO_KEY.get(self.event_filter_combo.currentText(), "ALL")
+
+    def _update_filter_help(self):
+        total = 0
+        visible = 0
+        for i in range(self.live_stream.count()):
+            item = self.live_stream.item(i)
+            if item.data(Qt.UserRole) is None:
+                continue
+            total += 1
+            if not item.isHidden():
+                visible += 1
+        key = self._current_filter_key()
+        if total == 0:
+            if self.is_monitoring:
+                self.filter_help_label.setText(
+                    "Waiting for activity… Open a browser, create a file, or start a program."
+                )
             else:
-                status_item.setForeground(QColor("#f1c40f"))
-                
-            self.integrity_table.setItem(row, 4, status_item)
-            self.integrity_table.setItem(row, 5, QTableWidgetItem(res["time"]))
-
-    def _event_in_incidents(self, event) -> bool:
-        if not self.cached_incidents or not event:
-            return False
-        eid = event.evidence_id
-        eid_set = {eid}
-        for inc in self.cached_incidents:
-            inc_eids = set(inc.get("evidence_ids", []))
-            if eid_set & inc_eids:
-                return True
-            for node in inc.get("nodes", []):
-                pass
-        return False
+                self.filter_help_label.setText(
+                    "No activity yet. Click Start Monitoring to begin capturing."
+                )
+        elif key == "ALL":
+            self.filter_help_label.setText(f"Showing all {total} captured events.")
+        else:
+            label = self.event_filter_combo.currentText()
+            self.filter_help_label.setText(
+                f"Showing {visible} of {total} events ({label}). "
+                f"Choose “All activity” to see everything."
+            )
 
     def apply_event_filter(self):
-        filter_text = self.event_filter_combo.currentText()
-
-        # We use cached suspicious activities
+        filter_key = self._current_filter_key()
         all_suspicious = self.cached_suspicious
         incidents = self.cached_incidents
 
@@ -343,53 +498,27 @@ class MainWindow(QMainWindow):
         for inc in incidents:
             incident_evidence_ids.update(inc.get("evidence_ids", []))
 
-        for i in range(self.live_stream.count()):
-            item = self.live_stream.item(i)
-            event = item.data(Qt.UserRole)
-            if event:
-                res = self.classification_engine.classify_event(event, self.graph_db.graph, all_suspicious, self.graph_version)
-                show = False
-                if filter_text == "ALL EVENTS":
-                    show = True
-                elif filter_text == "USER ACTIVITY" and res["classification"] == "USER_ACTIVITY":
-                    show = True
-                elif filter_text == "BACKGROUND" and res["classification"] == "BACKGROUND_ACTIVITY":
-                    show = True
-                elif filter_text == "SUSPICIOUS" and res["classification"] == "SUSPICIOUS_ACTIVITY":
-                    show = True
-                elif filter_text == "CORRELATED" and res["classification"] == "CORRELATED_ACTIVITY":
-                    show = True
-                elif filter_text == "UNKNOWN" and res["classification"] == "UNKNOWN":
-                    show = True
-                elif filter_text == "INCIDENT RELATED":
-                    show = event.evidence_id in incident_evidence_ids
+        for list_widget in (self.live_stream, self.timeline_list):
+            for i in range(list_widget.count()):
+                item = list_widget.item(i)
+                event = item.data(Qt.UserRole)
+                if not event:
+                    item.setHidden(False)
+                    continue
+                res = self.classification_engine.classify_event(
+                    event, self._analysis_graph(), all_suspicious, self.graph_version
+                )
+                show = filter_matches(
+                    filter_key,
+                    res["classification"],
+                    event.evidence_id,
+                    incident_evidence_ids,
+                )
                 item.setHidden(not show)
-
-        for i in range(self.timeline_list.count()):
-            item = self.timeline_list.item(i)
-            event = item.data(Qt.UserRole)
-            if event:
-                res = self.classification_engine.classify_event(event, self.graph_db.graph, all_suspicious, self.graph_version)
-                show = False
-                if filter_text == "ALL EVENTS":
-                    show = True
-                elif filter_text == "USER ACTIVITY" and res["classification"] == "USER_ACTIVITY":
-                    show = True
-                elif filter_text == "BACKGROUND" and res["classification"] == "BACKGROUND_ACTIVITY":
-                    show = True
-                elif filter_text == "SUSPICIOUS" and res["classification"] == "SUSPICIOUS_ACTIVITY":
-                    show = True
-                elif filter_text == "CORRELATED" and res["classification"] == "CORRELATED_ACTIVITY":
-                    show = True
-                elif filter_text == "UNKNOWN" and res["classification"] == "UNKNOWN":
-                    show = True
-                elif filter_text == "INCIDENT RELATED":
-                    show = event.evidence_id in incident_evidence_ids
-                item.setHidden(not show)
+        self._update_filter_help()
 
     @Slot(object)
     def on_new_event(self, event: ForensicEvent):
-        # Just buffer the event to avoid blocking UI
         self.event_buffer.append(event)
         
     def process_event_buffer(self):
@@ -405,49 +534,52 @@ class MainWindow(QMainWindow):
         self.event_buffer.clear()
         
         all_suspicious = self.cached_suspicious
-        current_filter = self.event_filter_combo.currentText()
+        filter_key = self._current_filter_key()
+        incident_evidence_ids = set()
+        for inc in self.cached_incidents:
+            incident_evidence_ids.update(inc.get("evidence_ids", []))
         
         for event in batch:
-            desc = event.process or event.file or event.ip or ""
-            
-            if event.source_type == "filesystem" and event.event_type == "file_deleted":
-                stream_text = f"{event.timestamp.strftime('%H:%M:%S')} FILESYSTEM    file_deleted    Filesystem delete event observed: {desc}"
-            else:
-                stream_text = f"{event.timestamp.strftime('%H:%M:%S')} {event.source_type.upper().ljust(10)} {event.event_type.ljust(15)} {desc}"
-                
+            stream_text = format_event_sentence(event)
+            color = event_item_color(event)
+
             item_live = QListWidgetItem(stream_text)
             item_live.setData(Qt.UserRole, event)
+            item_live.setForeground(color)
             self.live_stream.insertItem(0, item_live)
             
             item_timeline = QListWidgetItem(stream_text)
             item_timeline.setData(Qt.UserRole, event)
+            item_timeline.setForeground(color.darker(120))
             self.timeline_list.insertItem(0, item_timeline)
-            
-            if current_filter != "ALL EVENTS":
-                res = self.classification_engine.classify_event(event, self.graph_db.graph, all_suspicious, self.graph_version)
-                is_visible = False
-                if current_filter == "USER ACTIVITY" and res["classification"] == "USER_ACTIVITY": is_visible = True
-                elif current_filter == "BACKGROUND" and res["classification"] == "BACKGROUND_ACTIVITY": is_visible = True
-                elif current_filter == "SUSPICIOUS" and res["classification"] == "SUSPICIOUS_ACTIVITY": is_visible = True
-                elif current_filter == "CORRELATED" and res["classification"] == "CORRELATED_ACTIVITY": is_visible = True
-                elif current_filter == "UNKNOWN" and res["classification"] == "UNKNOWN": is_visible = True
-                
+
+            res = self.classification_engine.classify_event(
+                event, self._analysis_graph(), all_suspicious, self.graph_version
+            )
+            if event.evidence_id not in self.evidence_classifications:
+                self.evidence_classifications[event.evidence_id] = res["classification"]
+
+            if filter_key != "ALL":
+                is_visible = filter_matches(
+                    filter_key,
+                    res["classification"],
+                    event.evidence_id,
+                    incident_evidence_ids,
+                )
                 item_live.setHidden(not is_visible)
                 item_timeline.setHidden(not is_visible)
                 
-            # Store classification for graph filtering
-            if event.evidence_id not in self.evidence_classifications:
-                res = self.classification_engine.classify_event(event, self.graph_db.graph, all_suspicious, self.graph_version)
-                self.evidence_classifications[event.evidence_id] = res["classification"]
-                
-        # Truncate lists
         while self.live_stream.count() > 5000:
             self.live_stream.takeItem(5000)
         while self.timeline_list.count() > 500:
             self.timeline_list.takeItem(500)
             
-        # Send batch to correlation worker
+        self._stat_events += len(batch)
+        self._stat_evidence += len(batch)
+        self._session_event_count += len(batch)
+        self._last_event_at = datetime.datetime.utcnow()
         self.batch_ready.emit(batch)
+        self._update_filter_help()
         
         elapsed = (time.perf_counter() - start_time) * 1000
         print(f"[PERF] GUI refresh: {elapsed:.2f} ms")
@@ -459,100 +591,79 @@ class MainWindow(QMainWindow):
     @Slot(object)
     def on_graph_updated(self, graph_snapshot):
         self.graph_version += 1
-        self.graph_widget.update_graph(graph_snapshot, self.cached_suspicious, self.cached_incidents, self.evidence_classifications)
-        self.poll_stats()
+        self._latest_graph_snapshot = graph_snapshot
+        self._graph_refresh_timer.start()
         
     @Slot(list)
     def on_suspicious_updated(self, suspicious):
         self.cached_suspicious = suspicious
-        self.graph_widget.update_graph(self.graph_db.graph, self.cached_suspicious, self.cached_incidents, self.evidence_classifications)
-        self.update_incidents_ui()
+        self._graph_refresh_timer.start()
         
     @Slot(list)
     def on_incidents_updated(self, incidents):
         self.cached_incidents = incidents
-        self.graph_widget.update_graph(self.graph_db.graph, self.cached_suspicious, self.cached_incidents, self.evidence_classifications)
+        self._graph_refresh_timer.start()
         self.update_incidents_ui()
+
+    def _analysis_graph(self):
+        if self._latest_graph_snapshot is not None:
+            return self._latest_graph_snapshot
+        return self.graph_db.graph
+
+    def _refresh_graph_view(self):
+        graph = self._analysis_graph()
+        self.graph_widget.update_graph(
+            graph,
+            self.cached_suspicious,
+            self.cached_incidents,
+            self.evidence_classifications,
+        )
+        self.poll_stats()
         
     def update_incidents_ui(self):
-        # We don't update graph widget here directly, it's done via on_graph_updated
-        
-        all_suspicious = self.cached_suspicious
-        
-        # Update suspicious feed
-        self.suspicious_list.clear()
-        for act in all_suspicious:
-            reason = act.get('reason', '')
-            nodes = ", ".join(str(n) for n in act.get('nodes', []))
-            score = act.get('score', 0)
-            severity_label = "Potentially Suspicious"
-            if score >= 0.8:
-                severity_label = "Suspicious"
-            elif score >= 0.5:
-                severity_label = "Potentially Suspicious"
-            else:
-                severity_label = "Observed"
+        from PySide6.QtWidgets import QListWidgetItem
 
-            ev_ids = act.get("evidence_ids", [])
-            item_text = (f"[{severity_label} / Score: {score:.2f}] {act['rule_name']}\n"
-                         f"Rule: {act.get('rule_name','')}\n"
-                         f"Reason: {reason}\n"
-                         f"Evidence IDs: {', '.join(ev_ids) if ev_ids else 'N/A'}\n"
-                         f"Entities: {nodes}\n")
-            from PySide6.QtWidgets import QListWidgetItem
-            item = QListWidgetItem(item_text)
+        all_suspicious = self.cached_suspicious
+        self.suspicious_list.clear()
+        if not all_suspicious:
+            self.suspicious_list.addItem(
+                "Nothing unusual flagged yet.\n\n"
+                "Normal Chrome, Cursor, and GitHub traffic is usually expected and may not appear here.\n"
+                "Open the Activity tab to see everything being captured."
+            )
+        for act in all_suspicious:
+            item = QListWidgetItem(format_suspicious_item(act))
             item.setData(Qt.UserRole, act)
+            score = act.get("score", 0)
+            item.setForeground(QColor(severity_color(score)))
             self.suspicious_list.addItem(item)
-        
-        # Update text summary
-        incidents = self.cached_incidents
-        
-        if not incidents:
-            self.incident_view.setHtml("<p style='color: gray;'>Waiting for events...</p>")
-            return
-            
-        html = "<h3>Identified Incidents</h3>"
-        for inc in incidents:
-            status_color = "red" if inc["status"] == "Requires Investigation" else "green"
-            html += f"<div style='border: 1px solid gray; padding: 5px; margin-bottom: 5px;'>"
-            html += f"<b>{inc['incident_id']}</b> - {len(inc['nodes'])} Entities - <span style='color: {status_color}'>{inc['status']}</span><br/>"
-            html += f"<b>Time:</b> {inc.get('start_time')} - {inc.get('end_time')}<br/>"
-            html += f"<b>Reason:</b> {inc.get('reconstruction_reason')}<br/>"
-            
-            if inc.get("evidence_ids"):
-                html += f"<b>Evidence IDs:</b> {', '.join(inc['evidence_ids'])}<br/>"
-                
-            if inc.get("suspicious_activities"):
-                html += "<b>Suspicious Activities:</b><br/>"
-                for act in inc["suspicious_activities"]:
-                    html += f"&nbsp;&nbsp;- {act['rule_name']} (Score: {act['score']})<br/>"
-                    
-            if inc.get("timeline"):
-                html += "<b>Causal Timeline:</b><br/><pre style='background-color: #1e1e1e; color: #d4d4d4; padding: 5px;'>"
-                html += inc["timeline"]
-                html += "</pre>"
-                
-            html += "<b>Relationships:</b><br/>"
-            for rel in inc['relationships']:
-                html += f"&nbsp;&nbsp;[Conf: {rel['confidence']}] {rel['source']} &rarr; {rel['target']} ({rel.get('type', rel.get('relationship_type', ''))})<br/>"
-            html += "</div>"
-            
-        self.incident_view.setHtml(html)
+
+        self.incident_view.setHtml(format_incidents_page_html(self.cached_incidents))
+
+    def _refresh_stat_counts_from_db(self):
+        try:
+            self._stat_events = (
+                self.db.query(ForensicEvent)
+                .filter(ForensicEvent.case_id == self.current_case.id)
+                .count()
+            )
+            self._stat_evidence = (
+                self.db.query(EvidenceArtifact)
+                .filter(EvidenceArtifact.case_id == self.current_case.id)
+                .count()
+            )
+        except Exception as e:
+            print(f"Stat count query failed: {e}")
 
     def poll_stats(self):
-        # Update summary statistics lightly
+        # Avoid COUNT(*) on the UI thread while collectors are writing to SQLite.
+        if not self.is_monitoring:
+            self._refresh_stat_counts_from_db()
+
+        self.lbl_events.setText(str(self._stat_events))
+        self.lbl_evidence.setText(str(self._stat_evidence))
         
-        # Don't do heavy DB queries on the main thread for count, 
-        # instead just run quick counts.
-        # SQLite handles simple count(*) fast enough, but we should not do it if it freezes. 
-        # For small DBs it's fine.
-        event_count = self.db.query(ForensicEvent).filter(ForensicEvent.case_id == self.current_case.id).count()
-        ev_count = self.db.query(EvidenceArtifact).filter(EvidenceArtifact.case_id == self.current_case.id).count()
-        
-        self.lbl_events.setText(str(event_count))
-        self.lbl_evidence.setText(str(ev_count))
-        
-        rel_count = self.graph_db.graph.number_of_edges()
+        rel_count = self._analysis_graph().number_of_edges()
         
         suspicious_count = len(self.cached_suspicious)
         inc_count = len(self.cached_incidents)
@@ -566,6 +677,7 @@ class MainWindow(QMainWindow):
         
         self.lbl_user_acts.setText(str(user_acts))
         self.lbl_bg_acts.setText(str(bg_acts))
+        self._update_monitor_banner()
 
     @Slot(object)
     def on_event_clicked(self, item):
@@ -574,112 +686,87 @@ class MainWindow(QMainWindow):
             return
             
         all_suspicious = self.cached_suspicious
-        res = self.classification_engine.classify_event(event, self.graph_db.graph, all_suspicious, self.graph_version)
-        
-        html = f"<h3>Event Details</h3>"
-        
-        def safe_get(val):
-            return val if val else "Unavailable"
-            
-        html += f"<b>Event ID:</b> {safe_get(event.id)}<br/>"
-        html += f"<b>Evidence ID:</b> {safe_get(event.evidence_id)}<br/>"
-        html += f"<b>Timestamp:</b> {event.timestamp.strftime('%Y-%m-%d %H:%M:%S')}<br/>"
-        html += f"<b>Source Type:</b> {safe_get(event.source_type)}<br/>"
-        html += f"<b>Event Type:</b> {safe_get(event.event_type)}<br/>"
-        html += f"<b>User:</b> {safe_get(event.user)}<br/>"
-        html += f"<b>Host:</b> {safe_get(event.host)}<br/>"
-        
-        html += f"<b>Process:</b> {safe_get(event.process)}<br/>"
-        html += f"<b>PID:</b> {safe_get(event.pid)}<br/>"
-        html += f"<b>Parent PID:</b> {safe_get(event.parent_process)}<br/>"
-        
-        html += f"<b>File:</b> {safe_get(event.file)}<br/>"
-        html += f"<b>Path:</b> {safe_get(event.path)}<br/>"
-        
-        # Check metadata_json for extra fields
-        meta = event.metadata_json if event.metadata_json else {}
-        old_path = meta.get("old_path")
-        new_path = meta.get("new_path")
-        if old_path:
-            html += f"<b>Old Path:</b> {safe_get(old_path)}<br/>"
-        if new_path:
-            html += f"<b>New Path:</b> {safe_get(new_path)}<br/>"
-            
-        html += f"<b>IP:</b> {safe_get(event.ip)}<br/>"
-        html += f"<b>Port:</b> {safe_get(event.port)}<br/>"
-        
-        cls_color = "white"
-        if res['classification'] == 'SUSPICIOUS_ACTIVITY': cls_color = "red"
-        elif res['classification'] == 'USER_ACTIVITY': cls_color = "lightgreen"
-        elif res['classification'] == 'BACKGROUND_ACTIVITY': cls_color = "gray"
-        elif res['classification'] == 'CORRELATED_ACTIVITY': cls_color = "orange"
-        
-        html += f"<br/><b>Classification:</b> <span style='color: {cls_color};'>{res['classification']}</span><br/>"
-        html += f"<b>Attribution:</b> {res['attribution']}<br/>"
-        html += f"<b>Classification Reason:</b> {res['reason']}<br/><br/>"
-        
-        # Check integrity and provenance
-        integrity = "VALID"
+        res = self.classification_engine.classify_event(
+            event, self._analysis_graph(), all_suspicious, self.graph_version
+        )
+
+        html = format_event_summary_html(event, res)
+
+        integrity_block = ""
         ev_artifact = self.db.query(EvidenceArtifact).filter_by(id=event.evidence_id).first()
         if ev_artifact:
-            integrity = ev_artifact.integrity_status
-            html += f"<b>Integrity status:</b> {integrity}<br/>"
-            html += f"<hr style='border: 1px dashed #555;'>"
-            html += f"<h4>Evidence Provenance</h4>"
-            html += f"<b>Evidence ID:</b> {ev_artifact.id}<br/>"
-            html += f"<b>Source File:</b> {ev_artifact.filename}<br/>"
-            html += f"<b>Source Type:</b> {ev_artifact.source_type}<br/>"
-            html += f"<b>SHA-256:</b> {ev_artifact.sha256_hash}<br/>"
-            html += f"<b>Collected:</b> {ev_artifact.collection_timestamp.strftime('%Y-%m-%d %H:%M:%S') if ev_artifact.collection_timestamp else 'N/A'}<br/>"
+            integrity_block = (
+                f"<hr style='border: 1px dashed #555;'>"
+                f"<h4>Saved evidence copy</h4>"
+                f"<b>Status:</b> {ev_artifact.integrity_status or 'Unknown'}<br/>"
+                f"<b>Fingerprint (SHA-256):</b> {ev_artifact.sha256_hash}<br/>"
+                f"<b>Saved as:</b> {ev_artifact.filename}<br/>"
+                f"<b>Collected:</b> "
+                f"{ev_artifact.collection_timestamp.strftime('%Y-%m-%d %H:%M:%S') if ev_artifact.collection_timestamp else 'N/A'}<br/>"
+            )
         else:
-            html += f"<b>Integrity status:</b> UNVERIFIABLE (EvidenceArtifact record not found)<br/>"
-        # Switch to the Event Details tab (index 2)
+            integrity_block = (
+                "<hr/><p style='color:#888;'>No saved evidence file was found for this event.</p>"
+            )
+
+        html += format_event_advanced_html(event, integrity_block)
+        self.event_details_view.setHtml(html)
         self.right_tabs.setCurrentIndex(2)
 
     def on_suspicious_clicked(self, item):
         data = item.data(Qt.UserRole)
         if not data:
             return
-        act_id = data.get("activity_id")
         self.show_suspicious_provenance(data)
+        self._open_suspicious_in_graph()
+
+    def _open_suspicious_in_graph(self):
+        self.graph_widget.filter_combo.setCurrentText("Needs attention")
+        self.right_tabs.setCurrentIndex(0)
 
     def show_suspicious_provenance(self, act):
-        html = f"<h3>Suspicious Finding: {act.get('rule_name','Unknown')}</h3>"
-        html += f"<b>Activity ID:</b> {act.get('activity_id','N/A')}<br/>"
-        html += f"<b>Severity/Confidence:</b> {act.get('score','N/A')}<br/>"
-        html += f"<b>Observed Reason:</b> {act.get('reason','N/A')}<br/>"
-        html += f"<b>Detected At:</b> {act.get('timestamp','N/A')}<br/><br/>"
-
-        html += f"<hr style='border: 1px dashed #555;'>"
-        html += f"<h4>Supporting Evidence Provenance</h4>"
-        ev_ids = act.get("evidence_ids", [])
-        if ev_ids:
-            html += "<b>Evidence IDs:</b><ul>"
-            for eid in ev_ids:
-                html += f"<li>{eid}</li>"
-            html += "</ul>"
-            for eid in ev_ids:
-                artifact = self.db.query(EvidenceArtifact).filter_by(id=eid).first()
-                if artifact:
-                    html += f"<hr/>"
-                    html += f"<b>Evidence:</b> {artifact.filename}<br/>"
-                    html += f"<b>&nbsp;&nbsp;ID:</b> {artifact.id}<br/>"
-                    html += f"<b>&nbsp;&nbsp;SHA-256:</b> {artifact.sha256_hash}<br/>"
-                    html += f"<b>&nbsp;&nbsp;Integrity:</b> {artifact.integrity_status}<br/>"
-
-        rels = act.get("relationships", [])
-        if rels:
-            html += f"<br/><b>Related Relationships:</b><ul>"
-            for r in rels:
-                html += f"<li>{r['source']} &rarr; {r['target']} [{r.get('type','?')}] (conf: {r.get('confidence','?')})</li>"
-            html += "</ul>"
-
-        nodes = act.get("nodes", [])
-        if nodes:
-            html += f"<b>Related Entities:</b> {', '.join(str(n) for n in nodes)}<br/>"
-
+        html = format_suspicious_detail_html(act)
+        html += (
+            "<p><i>Tip: the Evidence Graph tab is already filtered to “Needs attention” "
+            "so you can see linked programs and services.</i></p>"
+        )
         self.event_details_view.setHtml(html)
         self.right_tabs.setCurrentIndex(2)
+
+    def _integrity_status_item(self, status: str) -> QTableWidgetItem:
+        display = map_status_display(status)
+        item = QTableWidgetItem(display)
+        item.setToolTip(STATUS_HELP.get(status, display))
+        if status == "VALID":
+            item.setForeground(QColor("#2e7d32"))
+        elif status == "MODIFIED":
+            item.setForeground(QColor("#c62828"))
+        elif status == "UNVERIFIABLE":
+            item.setForeground(QColor("#e67e22"))
+        else:
+            item.setForeground(QColor("#757575"))
+        return item
+
+    def _fill_integrity_row(self, row: int, art: EvidenceArtifact, current_hash: str = None, checked_at: str = None):
+        self.integrity_table.setItem(row, 0, QTableWidgetItem(art.id))
+        self.integrity_table.setItem(row, 1, QTableWidgetItem(human_source_label(art, self.db)))
+
+        orig_hash_short = (art.sha256_hash[:16] + "...") if art.sha256_hash else "N/A"
+        self.integrity_table.setItem(row, 2, QTableWidgetItem(orig_hash_short))
+
+        status = art.integrity_status or "UNVERIFIED"
+        if current_hash and current_hash not in ("N/A", "Not checked yet"):
+            cur_display = current_hash[:16] + "..." if len(current_hash) > 16 else current_hash
+        elif status == "VALID":
+            cur_display = orig_hash_short
+        else:
+            cur_display = "Not checked yet"
+        self.integrity_table.setItem(row, 3, QTableWidgetItem(cur_display))
+        self.integrity_table.setItem(row, 4, self._integrity_status_item(status))
+
+        ts = art.collection_timestamp
+        ts_str = checked_at or (ts.strftime("%Y-%m-%d %H:%M:%S") if ts else "—")
+        self.integrity_table.setItem(row, 5, QTableWidgetItem(ts_str))
 
     def populate_integrity_table(self):
         artifacts = self.db.query(EvidenceArtifact).filter(
@@ -687,58 +774,72 @@ class MainWindow(QMainWindow):
         ).all()
 
         self.integrity_table.setRowCount(0)
-
-        now = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
         for row, art in enumerate(artifacts):
             self.integrity_table.insertRow(row)
-            self.integrity_table.setItem(row, 0, QTableWidgetItem(art.id))
-            source_label = f"{art.source_type} ({art.filename})" if art.filename else art.source_type
-            self.integrity_table.setItem(row, 1, QTableWidgetItem(source_label))
+            self._fill_integrity_row(row, art)
 
-            orig_hash_short = (art.sha256_hash[:16] + "...") if art.sha256_hash else "N/A"
-            self.integrity_table.setItem(row, 2, QTableWidgetItem(orig_hash_short))
-            self.integrity_table.setItem(row, 2, QTableWidgetItem(orig_hash_short))
-
-            status = art.integrity_status or "UNVERIFIED"
-            status_item = QTableWidgetItem(status)
-            if status == "VALID":
-                status_item.setForeground(QColor("#2ecc71"))
-            elif status == "MODIFIED":
-                status_item.setForeground(QColor("#e74c3c"))
-            else:
-                status_item.setForeground(QColor("#f1c40f"))
-            self.integrity_table.setItem(row, 4, status_item)
-
-            current_hash = "Pending verification"
-            self.integrity_table.setItem(row, 3, QTableWidgetItem(current_hash))
-
-            ts = art.collection_timestamp
-            ts_str = ts.strftime("%Y-%m-%d %H:%M:%S") if ts else now
-            self.integrity_table.setItem(row, 5, QTableWidgetItem(ts_str))
-
-    def verify_integrity(self):
+    def verify_integrity(self, silent: bool = False):
         from core.services.integrity import verify_all_evidence
-        results = verify_all_evidence(self.db, self.current_case.id)
+        try:
+            results = verify_all_evidence(self.db, self.current_case.id)
+        except Exception as e:
+            print(f"Integrity verification failed: {e}")
+            if not silent:
+                QMessageBox.warning(self, "Integrity check", f"Could not verify evidence:\n{e}")
+            return
 
         self.integrity_table.setRowCount(0)
+        artifacts_by_id = {
+            art.id: art
+            for art in self.db.query(EvidenceArtifact).filter(
+                EvidenceArtifact.case_id == self.current_case.id
+            ).all()
+        }
 
         for row, res in enumerate(results):
             self.integrity_table.insertRow(row)
-            self.integrity_table.setItem(row, 0, QTableWidgetItem(res["evidence_id"]))
-            self.integrity_table.setItem(row, 1, QTableWidgetItem(res["source"]))
-            self.integrity_table.setItem(row, 2, QTableWidgetItem(res["original_hash"][:16] + "..."))
-            self.integrity_table.setItem(row, 3, QTableWidgetItem(res["current_hash"][:16] + "..."))
-
-            status_item = QTableWidgetItem(res["status"])
-            if res["status"] == "VALID":
-                status_item.setForeground(QColor("#2ecc71"))
-            elif res["status"] == "MODIFIED":
-                status_item.setForeground(QColor("#e74c3c"))
+            art = artifacts_by_id.get(res["evidence_id"])
+            if art:
+                self._fill_integrity_row(
+                    row,
+                    art,
+                    current_hash=res.get("current_hash"),
+                    checked_at=res.get("time"),
+                )
             else:
-                status_item.setForeground(QColor("#f1c40f"))
+                self.integrity_table.setItem(row, 0, QTableWidgetItem(res["evidence_id"]))
+                self.integrity_table.setItem(row, 1, QTableWidgetItem(res.get("source", "")))
+                orig = res.get("original_hash") or ""
+                self.integrity_table.setItem(
+                    row, 2, QTableWidgetItem((orig[:16] + "...") if orig else "N/A")
+                )
+                cur = res.get("current_hash") or ""
+                self.integrity_table.setItem(
+                    row,
+                    3,
+                    QTableWidgetItem(
+                        (cur[:16] + "...") if cur and cur != "N/A" else "Not checked yet"
+                    ),
+                )
+                self.integrity_table.setItem(row, 4, self._integrity_status_item(res["status"]))
+                self.integrity_table.setItem(row, 5, QTableWidgetItem(res.get("time") or "—"))
 
-            self.integrity_table.setItem(row, 4, status_item)
-            self.integrity_table.setItem(row, 5, QTableWidgetItem(res["time"]))
+        if not silent:
+            modified = sum(1 for r in results if r["status"] == "MODIFIED")
+            missing = sum(1 for r in results if r["status"] == "UNVERIFIABLE")
+            if modified or missing:
+                QMessageBox.warning(
+                    self,
+                    "Integrity check",
+                    f"Checked {len(results)} evidence files.\n"
+                    f"{modified} changed on disk · {missing} missing or unreadable.",
+                )
+            else:
+                QMessageBox.information(
+                    self,
+                    "Integrity check",
+                    f"Checked {len(results)} evidence files — all unchanged.",
+                )
 
     def on_offline_evidence_clicked(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -781,17 +882,18 @@ class MainWindow(QMainWindow):
         self._populate_suspicious_list(result)
 
         self.graph_version += 1
+        self._latest_graph_snapshot = self.graph_db.graph.copy()
 
         ev_cls = {}
         for ev in result.events:
             r = self.classification_engine.classify_event(
-                ev, self.graph_db.graph, self.cached_suspicious, self.graph_version
+                ev, self._analysis_graph(), self.cached_suspicious, self.graph_version
             )
             ev_cls[ev.evidence_id] = r["classification"]
         self.evidence_classifications.update(ev_cls)
 
         self.graph_widget.update_graph(
-            self.graph_db.graph,
+            self._analysis_graph(),
             self.cached_suspicious,
             self.cached_incidents,
             self.evidence_classifications,
@@ -807,43 +909,34 @@ class MainWindow(QMainWindow):
         from PySide6.QtWidgets import QListWidgetItem
 
         all_suspicious = self.cached_suspicious
-        current_filter = self.event_filter_combo.currentText()
+        filter_key = self._current_filter_key()
+        incident_evidence_ids = set()
+        for inc in self.cached_incidents:
+            incident_evidence_ids.update(inc.get("evidence_ids", []))
 
         for event in result.events:
-            desc = event.process or event.file or event.ip or ""
-            stream_text = (f"{event.timestamp.strftime('%H:%M:%S')} "
-                           f"{event.source_type.upper().ljust(10)} "
-                           f"{event.event_type.ljust(15)} {desc}")
+            stream_text = format_event_sentence(event)
+            color = event_item_color(event)
 
             item_live = QListWidgetItem(stream_text)
             item_live.setData(Qt.UserRole, event)
+            item_live.setForeground(color)
             self.live_stream.insertItem(0, item_live)
 
             item_timeline = QListWidgetItem(stream_text)
             item_timeline.setData(Qt.UserRole, event)
             self.timeline_list.insertItem(0, item_timeline)
 
-            if current_filter != "ALL EVENTS":
-                res = self.classification_engine.classify_event(
-                    event, self.graph_db.graph, all_suspicious, self.graph_version
+            res = self.classification_engine.classify_event(
+                event, self._analysis_graph(), all_suspicious, self.graph_version
+            )
+            if filter_key != "ALL":
+                is_visible = filter_matches(
+                    filter_key,
+                    res["classification"],
+                    event.evidence_id,
+                    incident_evidence_ids,
                 )
-                is_visible = False
-                if current_filter == "USER ACTIVITY" and res["classification"] == "USER_ACTIVITY":
-                    is_visible = True
-                elif current_filter == "BACKGROUND" and res["classification"] == "BACKGROUND_ACTIVITY":
-                    is_visible = True
-                elif current_filter == "SUSPICIOUS" and res["classification"] == "SUSPICIOUS_ACTIVITY":
-                    is_visible = True
-                elif current_filter == "CORRELATED" and res["classification"] == "CORRELATED_ACTIVITY":
-                    is_visible = True
-                elif current_filter == "UNKNOWN" and res["classification"] == "UNKNOWN":
-                    is_visible = True
-                elif current_filter == "INCIDENT RELATED":
-                    iids = set()
-                    for inc in self.cached_incidents:
-                        iids.update(inc.get("evidence_ids", []))
-                    is_visible = event.evidence_id in iids
-
                 item_live.setHidden(not is_visible)
                 item_timeline.setHidden(not is_visible)
 
@@ -854,24 +947,9 @@ class MainWindow(QMainWindow):
 
     def _populate_suspicious_list(self, result: OfflineAnalysisResult):
         from PySide6.QtWidgets import QListWidgetItem
+        self.suspicious_list.clear()
         for act in result.suspicious_activities:
-            reason = act.get('reason', '')
-            nodes = ", ".join(str(n) for n in act.get('nodes', []))
-            score = act.get('score', 0)
-            severity_label = "Potentially Suspicious"
-            if score >= 0.8:
-                severity_label = "Suspicious"
-            elif score >= 0.5:
-                severity_label = "Potentially Suspicious"
-            else:
-                severity_label = "Observed"
-
-            ev_ids = act.get("evidence_ids", [])
-            item_text = (f"[{severity_label} / Score: {score:.2f}] {act['rule_name']}\n"
-                         f"Rule: {act.get('rule_name','')}\n"
-                         f"Reason: {reason}\n"
-                         f"Evidence IDs: {', '.join(ev_ids) if ev_ids else 'N/A'}\n"
-                         f"Entities: {nodes}\n")
-            item = QListWidgetItem(item_text)
+            item = QListWidgetItem(format_suspicious_item(act))
             item.setData(Qt.UserRole, act)
+            item.setForeground(QColor(severity_color(act.get("score", 0))))
             self.suspicious_list.addItem(item)

@@ -1,7 +1,71 @@
 import networkx as nx
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import json
 import os
+
+
+def make_process_entity(host: Optional[str], pid: Any, process: Optional[str]) -> Dict[str, Any]:
+    host = host or "localhost"
+    process_name = str(process) if process else "unknown"
+    pid_str = str(pid) if pid not in (None, "", "Unavailable") else "?"
+    return {
+        "type": "Process",
+        "id": f"{host}_{pid_str}_{process_name}",
+        "label": process_name,
+        "subtitle": f"PID {pid_str}",
+        "host": host,
+        "pid": pid_str,
+        "process": process_name,
+    }
+
+
+def make_ip_entity(ip: Optional[str]) -> Dict[str, Any]:
+    address = str(ip) if ip else "unknown"
+    return {
+        "type": "IP",
+        "id": address,
+        "label": address,
+        "subtitle": "Remote IP",
+        "ip": address,
+    }
+
+
+def make_file_entity(host: Optional[str], filename: Optional[str]) -> Dict[str, Any]:
+    host = host or "localhost"
+    name = str(filename) if filename else "unknown"
+    return {
+        "type": "File",
+        "id": f"{host}_{name}",
+        "label": name,
+        "subtitle": "File",
+        "host": host,
+        "file": name,
+    }
+
+
+def make_user_entity(user: Optional[str]) -> Dict[str, Any]:
+    name = str(user) if user else "unknown"
+    return {
+        "type": "User",
+        "id": name,
+        "label": name,
+        "subtitle": "User",
+        "user": name,
+    }
+
+
+def make_device_entity(host: Optional[str], user: Optional[str] = None) -> Dict[str, Any]:
+    host = host or "localhost"
+    who = user or "unknown"
+    return {
+        "type": "Device",
+        "id": f"{host}_USB_{who}",
+        "label": "USB device",
+        "subtitle": who,
+        "host": host,
+        "user": who,
+    }
+
 
 class EvidenceGraph:
     def __init__(self, case_id: str, storage_dir: str = "data"):
@@ -12,14 +76,25 @@ class EvidenceGraph:
         self.file_path = os.path.join(self.storage_dir, f"{case_id}_graph.json")
         self.load()
 
+    def _upsert_node(self, entity: Dict[str, Any]):
+        node_id = entity["id"]
+        attrs = {k: v for k, v in entity.items() if k != "id" and v not in (None, "")}
+        if "label" not in attrs:
+            attrs["label"] = node_id
+        if self.graph.has_node(node_id):
+            existing = self.graph.nodes[node_id]
+            for key, value in attrs.items():
+                if key in ("label", "subtitle", "hostname", "type") or not existing.get(key):
+                    existing[key] = value
+        else:
+            self.graph.add_node(node_id, **attrs)
+
     def add_relationship(self, rel: Dict[str, Any]):
         """Adds a relationship and its backing evidence to the graph."""
         source = rel["source"]
         target = rel["target"]
-        
-        # Ensure nodes exist
-        self.graph.add_node(source["id"], type=source["type"], label=source["id"])
-        self.graph.add_node(target["id"], type=target["type"], label=target["id"])
+        self._upsert_node(source)
+        self._upsert_node(target)
         
         # Deduplicate edges using relationship_type as the MultiDiGraph edge key
         edge_key = rel["type"]

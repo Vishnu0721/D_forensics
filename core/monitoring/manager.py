@@ -101,27 +101,59 @@ class MonitoringManager(QObject):
         self.worker_thread.start()
         
         self.persistence_worker.event_processed.connect(self.event_processed)
-        
+        self.collectors = []
+        self._create_collectors()
+
+    def _create_collectors(self):
         self.collectors = [
-            ProcessCollector(case_id, poll_interval=2),
-            FilesystemCollector(case_id),
-            NetworkCollector(case_id, poll_interval=3)
+            ProcessCollector(self.case_id, poll_interval=2),
+            FilesystemCollector(self.case_id),
+            NetworkCollector(self.case_id, poll_interval=3)
         ]
-        
         for collector in self.collectors:
-            # Connect the collector's signal directly to the persistence worker's slot
-            # Because they are in different threads, Qt will safely queue these calls
             collector.event_captured.connect(self.persistence_worker.handle_raw_event)
+
+    def _recycle_finished_collectors(self):
+        if not self.collectors:
+            self._create_collectors()
+            return
+        if not any(c.isFinished() for c in self.collectors):
+            return
+        for c in self.collectors:
+            try:
+                c.event_captured.disconnect(self.persistence_worker.handle_raw_event)
+            except Exception:
+                pass
+            if c.isRunning():
+                c.stop_monitoring()
+                c.wait(500)
+        self._create_collectors()
             
     def start_all(self):
+        self._recycle_finished_collectors()
         for c in self.collectors:
-            c.start_monitoring()
+            if not c.isRunning():
+                c.start_monitoring()
             
     def stop_all(self):
         for c in self.collectors:
             c.stop_monitoring()
+
+    def collector_status(self):
+        names = ("Processes", "Files", "Network")
+        status = []
+        for name, collector in zip(names, self.collectors):
+            alive = bool(getattr(collector, "_is_running", False) and collector.isRunning())
+            status.append({"name": name, "running": alive})
+        return status
             
     def shutdown(self):
         self.stop_all()
+        for c in self.collectors:
+            if c.isRunning() and not c.wait(2000):
+                c.terminate()
+                c.wait(500)
         self.worker_thread.quit()
-        self.worker_thread.wait()
+        if not self.worker_thread.wait(2000):
+            self.worker_thread.terminate()
+            self.worker_thread.wait(500)

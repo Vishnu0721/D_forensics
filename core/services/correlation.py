@@ -1,9 +1,15 @@
 from typing import List, Dict, Any
-from core.database.models import ForensicEvent
 from PySide6.QtCore import QObject, Signal, Slot
 import time
-import copy
+from core.database.models import ForensicEvent
 from core.database import SessionLocal
+from core.services.graph import (
+    make_process_entity,
+    make_ip_entity,
+    make_file_entity,
+    make_user_entity,
+    make_device_entity,
+)
 
 # Configurable weights for confidence scoring
 WEIGHTS = {
@@ -36,8 +42,8 @@ def correlate_events(events: List[ForensicEvent], max_window_seconds: int = 300)
         # Intra-event Rule: Network -> Process (Live telemetry correlation)
         if event_a.event_type == 'connection' and event_a.pid and event_a.process and event_a.ip:
             relationships.append({
-                "source": {"type": "Process", "id": f"{host_str_a}_{event_a.pid}_{event_a.process}"},
-                "target": {"type": "IP", "id": event_a.ip},
+                "source": make_process_entity(host_str_a, event_a.pid, event_a.process),
+                "target": make_ip_entity(event_a.ip),
                 "type": "CONNECTED_TO",
                 "confidence": 1.0,
                 "evidence_ids": [event_a.evidence_id],
@@ -61,8 +67,8 @@ def correlate_events(events: List[ForensicEvent], max_window_seconds: int = 300)
                 if event_a.pid and event_a.pid != "Unavailable" and event_a.pid == event_b.pid and event_a.host == event_b.host:
                     conf = (WEIGHTS['time'] * temp_score) + (WEIGHTS['entity'] * 1.0) + (WEIGHTS['source'] * 0.9)
                     relationships.append({
-                        "source": {"type": "Process", "id": f"{host_str_a}_{event_a.pid}_{event_a.process}"},
-                        "target": {"type": "IP", "id": event_b.ip},
+                        "source": make_process_entity(host_str_a, event_a.pid, event_a.process),
+                        "target": make_ip_entity(event_b.ip),
                         "type": "CONNECTED_TO",
                         "confidence": round(min(conf, 1.0), 2),
                         "evidence_ids": [event_a.evidence_id, event_b.evidence_id],
@@ -89,8 +95,8 @@ def correlate_events(events: List[ForensicEvent], max_window_seconds: int = 300)
                         reasons.append(f"Events occurred {time_diff} seconds apart")
                         
                         relationships.append({
-                            "source": {"type": "File", "id": f"{host_str_a}_{event_a.file}"},
-                            "target": {"type": "Process", "id": f"{host_str_b}_{event_b.pid}_{event_b.process}"},
+                            "source": make_file_entity(host_str_a, event_a.file),
+                            "target": make_process_entity(host_str_b, event_b.pid, event_b.process),
                             "type": "EXECUTED_AS",
                             "confidence": round(min(conf, 1.0), 2),
                             "evidence_ids": [event_a.evidence_id, event_b.evidence_id],
@@ -102,8 +108,8 @@ def correlate_events(events: List[ForensicEvent], max_window_seconds: int = 300)
                 if event_a.file and event_a.file == event_b.file and event_a.host == event_b.host:
                     conf = (WEIGHTS['time'] * temp_score) + (WEIGHTS['entity'] * 0.9) + (WEIGHTS['source'] * 0.9)
                     relationships.append({
-                        "source": {"type": "User", "id": event_a.user or "unknown"},
-                        "target": {"type": "File", "id": f"{host_str_b}_{event_b.file}"},
+                        "source": make_user_entity(event_a.user or "unknown"),
+                        "target": make_file_entity(host_str_b, event_b.file),
                         "type": "DOWNLOADED",
                         "confidence": round(min(conf, 1.0), 2),
                         "evidence_ids": [event_a.evidence_id, event_b.evidence_id],
@@ -125,8 +131,8 @@ def correlate_new_event(new_event: ForensicEvent, history: List[ForensicEvent], 
     # Intra-event Rule: Network -> Process (Live telemetry correlation)
     if new_event.event_type == 'connection' and new_event.pid and new_event.process and new_event.ip:
         relationships.append({
-            "source": {"type": "Process", "id": f"{host_str_a}_{new_event.pid}_{new_event.process}"},
-            "target": {"type": "IP", "id": new_event.ip},
+            "source": make_process_entity(host_str_a, new_event.pid, new_event.process),
+            "target": make_ip_entity(new_event.ip),
             "type": "CONNECTED_TO",
             "confidence": 1.0,
             "evidence_ids": [new_event.evidence_id],
@@ -157,8 +163,8 @@ def correlate_new_event(new_event: ForensicEvent, history: List[ForensicEvent], 
             if event_early.pid and event_early.pid != "Unavailable" and event_early.pid == event_late.pid and event_early.host == event_late.host:
                 conf = (WEIGHTS['time'] * temp_score) + (WEIGHTS['entity'] * 1.0) + (WEIGHTS['source'] * 0.9)
                 relationships.append({
-                    "source": {"type": "Process", "id": f"{host_early}_{event_early.pid}_{event_early.process}"},
-                    "target": {"type": "IP", "id": event_late.ip},
+                    "source": make_process_entity(host_early, event_early.pid, event_early.process),
+                    "target": make_ip_entity(event_late.ip),
                     "type": "CONNECTED_TO",
                     "confidence": round(min(conf, 1.0), 2),
                     "evidence_ids": [event_early.evidence_id, event_late.evidence_id],
@@ -185,8 +191,8 @@ def correlate_new_event(new_event: ForensicEvent, history: List[ForensicEvent], 
                     reasons.append(f"Events occurred {time_diff} seconds apart")
                     
                     relationships.append({
-                        "source": {"type": "File", "id": f"{host_early}_{event_early.file}"},
-                        "target": {"type": "Process", "id": f"{host_late}_{event_late.pid}_{event_late.process}"},
+                        "source": make_file_entity(host_early, event_early.file),
+                        "target": make_process_entity(host_late, event_late.pid, event_late.process),
                         "type": "EXECUTED_AS",
                         "confidence": round(min(conf, 1.0), 2),
                         "evidence_ids": [event_early.evidence_id, event_late.evidence_id],
@@ -198,8 +204,8 @@ def correlate_new_event(new_event: ForensicEvent, history: List[ForensicEvent], 
             if event_early.file and event_early.file == event_late.file and event_early.host == event_late.host:
                 conf = (WEIGHTS['time'] * temp_score) + (WEIGHTS['entity'] * 0.9) + (WEIGHTS['source'] * 0.9)
                 relationships.append({
-                    "source": {"type": "User", "id": event_early.user or "unknown"},
-                    "target": {"type": "File", "id": f"{host_late}_{event_late.file}"},
+                    "source": make_user_entity(event_early.user or "unknown"),
+                    "target": make_file_entity(host_late, event_late.file),
                     "type": "DOWNLOADED",
                     "confidence": round(min(conf, 1.0), 2),
                     "evidence_ids": [event_early.evidence_id, event_late.evidence_id],
@@ -214,8 +220,8 @@ def correlate_new_event(new_event: ForensicEvent, history: List[ForensicEvent], 
             if event_early.user and event_early.user == event_late.user and event_early.host == event_late.host:
                 conf = (WEIGHTS['time'] * temp_score) + (WEIGHTS['entity'] * 1.0) + (WEIGHTS['source'] * 0.8)
                 relationships.append({
-                    "source": {"type": "User", "id": event_early.user},
-                    "target": {"type": "Process", "id": f"{host_late}_{event_late.pid}_{event_late.process}"},
+                    "source": make_user_entity(event_early.user),
+                    "target": make_process_entity(host_late, event_late.pid, event_late.process),
                     "type": "EXECUTED_BY",
                     "confidence": round(min(conf, 1.0), 2),
                     "evidence_ids": [event_early.evidence_id, event_late.evidence_id],
@@ -229,11 +235,13 @@ def correlate_new_event(new_event: ForensicEvent, history: List[ForensicEvent], 
         if event_early.event_type in ['file_accessed', 'file_created', 'process_started'] and event_late.event_type in ['usb_connected', 'file_copied']:
             if event_early.host == event_late.host:
                 conf = (WEIGHTS['time'] * temp_score) + (WEIGHTS['entity'] * 0.7) + (WEIGHTS['source'] * 0.9)
-                source_type = "Process" if event_early.event_type == 'process_started' else "File"
-                source_id = f"{host_early}_{event_early.pid}_{event_early.process}" if source_type == "Process" else f"{host_early}_{event_early.file}"
+                if event_early.event_type == 'process_started':
+                    source = make_process_entity(host_early, event_early.pid, event_early.process)
+                else:
+                    source = make_file_entity(host_early, event_early.file)
                 relationships.append({
-                    "source": {"type": source_type, "id": source_id},
-                    "target": {"type": "Device", "id": f"{host_late}_USB_{event_late.user or 'unknown'}"},
+                    "source": source,
+                    "target": make_device_entity(host_late, event_late.user),
                     "type": "EXFILTRATED_VIA",
                     "confidence": round(min(conf, 1.0), 2),
                     "evidence_ids": [event_early.evidence_id, event_late.evidence_id],
@@ -249,8 +257,8 @@ def correlate_new_event(new_event: ForensicEvent, history: List[ForensicEvent], 
                 if event_early.file_hash == event_late.file_hash and event_early.pid != event_late.pid:
                     conf = 1.0  # Exact hash match is strong evidence
                     relationships.append({
-                        "source": {"type": "Process", "id": f"{host_early}_{event_early.pid}_{event_early.process}"},
-                        "target": {"type": "Process", "id": f"{host_late}_{event_late.pid}_{event_late.process}"},
+                        "source": make_process_entity(host_early, event_early.pid, event_early.process),
+                        "target": make_process_entity(host_late, event_late.pid, event_late.process),
                         "type": "SAME_HASH_AS",
                         "confidence": conf,
                         "evidence_ids": [event_early.evidence_id, event_late.evidence_id],

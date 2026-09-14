@@ -1,198 +1,172 @@
 # Digital Forensics Monitoring and Correlation Platform
 
-A Python-based forensic monitoring and digital evidence analysis application designed for capturing live system telemetry, normalizing events, correlating suspicious behavior, and reconstructing incidents from evidence.
+A Python desktop application for **local** live forensic monitoring, evidence integrity, graph-based correlation, and offline evidence analysis.
 
-This project combines desktop monitoring, evidence integrity validation, graph-based analysis, and offline evidence ingestion into a single investigative workflow. It is intended for cybersecurity, forensic investigation, academic research, and digital evidence triage.
+It captures process, filesystem, and network activity **on this computer only** (not a remote agent), stores hashed evidence artifacts, correlates related events, and presents findings in plain language for investigation and research.
+
+## What’s new (current desktop)
+
+Clarity and stability improvements on top of the original pipeline:
+
+- **Single Start / Stop button** with a clear **LIVE** or **STOPPED** banner and next-step guidance
+- **Plain-language activity stream** (e.g. “Chrome contacted GitHub”) instead of raw jargon
+- **Needs attention** and **Activity** tabs with readable filters and empty states
+- **Evidence Graph** with Simple/Detailed views, fit-to-view layout, friendly service names, and a short “story” on node click
+- **Incident Summary** as activity stories (Informational vs Review recommended)
+- **Evidence Integrity** tab with human labels (Unchanged / Changed on disk / File missing) and auto-verify on Stop
+- **Quick tour** (Help → Quick tour) for first-time users
+- Performance hardening: interruptible collectors, SQLite WAL, debounced graph updates, layout off the UI thread
+
+> A separate **light-theme web app** is planned (same repo, later). The desktop app remains the supported UI today.
 
 ## Overview
 
-The application is built around a forensic evidence pipeline:
+Forensic evidence pipeline:
 
-1. Collect raw telemetry from the local machine.
-2. Persist evidence artifacts to disk with deterministic SHA-256 hashing.
-3. Normalize heterogeneous events into a common event schema.
-4. Correlate related events using rule-based logic.
-5. Build a relationship graph for investigation and incident reconstruction.
-6. Classify suspicious activity and present findings in a desktop dashboard.
+1. Collect raw telemetry from the local machine  
+2. Persist evidence artifacts to disk with deterministic SHA-256 hashing  
+3. Normalize events into a common schema  
+4. Correlate related events with rule-based logic  
+5. Build a relationship graph and reconstruct incidents  
+6. Classify activity and present findings in the desktop dashboard  
 
-The project is implemented in Python using PySide6 for the GUI, SQLAlchemy for metadata storage, and NetworkX for graph construction and evidence linkage.
+**Stack:** Python 3.10+, PySide6 (GUI), SQLAlchemy (SQLite), NetworkX (graphs), psutil + watchdog (collectors).
 
 ## Key Features
 
 ### Live Monitoring
-- Process activity collection
-- File system event tracking
+- Process start/stop collection (`psutil`)
+- Filesystem watching on common user and system paths (`watchdog`), with noise filtering
 - Live network connection monitoring
-- Real-time evidence capture
-- Event stream and timeline visualization
+- Real-time evidence JSON on disk + database events
+- Clear LIVE/STOPPED status and collector feedback
 
 ### Evidence Handling
-- Evidence artifact creation for every captured event
-- SHA-256 hashing of captured evidence files
-- Traceability between events and their original evidence
-- Integrity verification against stored hashes
+- One evidence artifact per captured event
+- SHA-256 fingerprint of the saved file
+- Traceability from event → evidence → integrity status
+- Verify Integrity (manual) and automatic check when monitoring stops
 
 ### Analysis and Correlation
-- Normalization of multiple source types into a single event model
-- Rule-based correlation of suspicious or related events
-- Multi-relationship graph construction with evidence nodes and event links
-- Incident reconstruction from connected event patterns
-- Suspicious activity identification and classification
+- Normalization of process, filesystem, network (and offline) sources
+- Rule-based correlation into a multi-relationship graph
+- Suspicious pattern detection (“Needs attention”)
+- Incident reconstruction as connected activity stories
+- Event classification (user / background / correlated / etc.)
 
-### Offline Investigation Support
-- Support for preserved evidence files in structured forensic formats
-- Evidence ingestion from imported artifacts
-- Offline parsing and event normalization
-- Graph-based analysis on imported evidence
+### Offline Investigation
+- Import preserved evidence (JSON, CSV, logs, and related formats)
+- Offline parse → normalize → graph → incidents
+- Same dashboard views for imported cases
 
 ### Desktop Interface
-- Main monitoring dashboard
-- Evidence graph visualization
-- Incident summary display
-- Event detail inspection
-- Integrity verification table
+- Monitor controls and status banner
+- Activity stream with plain-language filters
+- Needs attention list (severity in plain English)
+- Evidence Graph (Simple view by default)
+- Incident Summary and Event Details
+- Evidence Integrity tab with status legend
+- First-run quick tour
 
 ## System Architecture
 
-The project follows a layered design:
+```text
+Collectors (process / filesystem / network)
+        ↓
+Persistence (JSON on disk + SHA-256 + ForensicEvent)
+        ↓
+Correlation + EvidenceGraph (NetworkX)
+        ↓
+Suspicious rules + Incident reconstruction
+        ↓
+PySide6 GUI (plain-language presentation)
+```
 
-- Core database layer for case and evidence storage
-- Monitoring layer for process, file, and network collection
-- Normalization layer for converting raw data into forensic events
-- Correlation and graph services for connecting related activity
-- Integrity and suspicious activity analysis modules
-- GUI layer for visualization and investigator workflows
+Layers:
+
+- **Database** — cases, evidence, events, audit log (`forensics.db`, WAL mode)
+- **Monitoring** — local collectors + persistence worker
+- **Services** — normalization, correlation, graph, integrity, offline analysis
+- **GUI** — dashboard, graph view, language helpers
 
 ## Project Structure
 
 ```text
 .
 ├── core/
-│   ├── database/
-│   │   ├── __init__.py
-│   │   ├── engine.py
-│   │   └── models.py
-│   ├── monitoring/
-│   │   ├── base.py
-│   │   ├── filesystem.py
-│   │   ├── manager.py
-│   │   ├── network.py
-│   │   └── process.py
-│   └── services/
-│       ├── classification.py
-│       ├── correlation.py
-│       ├── graph.py
-│       ├── ingestion.py
-│       ├── integrity.py
-│       ├── normalization.py
-│       ├── offline_analysis.py
-│       ├── reconstruction.py
-│       ├── report_parser.py
-│       ├── suspicious.py
-│       ├── sysmon_adapter.py
-│       └── timeline.py
+│   ├── database/          # SQLAlchemy engine + models
+│   ├── monitoring/        # Live collectors + manager
+│   └── services/          # Correlation, graph, integrity, offline, …
 ├── gui/
-│   ├── __init__.py
-│   ├── graph_view.py
-│   ├── main_window.py
+│   ├── main_window.py     # Main dashboard
+│   ├── graph_view.py      # Interactive evidence graph
+│   ├── event_language.py  # Plain-language event text
+│   ├── incident_language.py
+│   ├── integrity_ui.py
+│   ├── quick_tour.py
 │   └── offline_analysis_window.py
 ├── data/
-│   └── evidence/
+│   └── evidence/          # Runtime evidence (usually gitignored)
 ├── evaluation/
-│   └── run_evaluation.py
 ├── main.py
 ├── requirements.txt
-├── technical_audit_report.md
-├── test_phase1.py
-├── test_fs.py
-├── test_offline_analysis.py
-├── test_sysmon_adapter.py
-├── test_csv_and_imports.py
-├── burst_test.py
-├── forensics.db
 └── README.md
 ```
 
 ## Requirements
 
-Python 3.10+ is recommended.
-
-Install all project dependencies with:
+Python **3.10+** recommended.
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### Dependency Highlights
+### Main dependencies
 
-- PySide6: GUI framework
-- SQLAlchemy: database ORM
-- networkx: evidence graph modeling
-- pandas: data handling
-- psutil: system process and resource information
-- watchdog: file system event monitoring
-- neo4j: graph database support integration
-- pydantic: data validation
+| Package | Role |
+|---------|------|
+| PySide6 | Desktop GUI |
+| SQLAlchemy | ORM / SQLite |
+| networkx | Evidence graph |
+| psutil | Process & network telemetry |
+| watchdog | Filesystem events |
+| pandas / pydantic | Parsing & validation |
+| pywin32 | Windows helpers |
+
+`neo4j` is listed for optional future use; the current graph engine is **NetworkX**.
 
 ## Installation and Setup
 
-1. Clone the repository
-2. Create a virtual environment
-3. Activate the environment
-4. Install dependencies
-5. Run the application
-
-### Example
-
 ```bash
-git clone https://github.com/Kamalika-k/Digital_forensics.git
-cd Digital_forensics
+git clone https://github.com/Kamalika-k/digital_forensics.git
+cd digital_forensics
 python -m venv venv
-source venv/bin/activate   # Linux/macOS
-# or
-venv\Scripts\activate      # Windows
+# Windows:
+venv\Scripts\activate
+# Linux/macOS:
+# source venv/bin/activate
 pip install -r requirements.txt
 python main.py
 ```
 
 ## Running the Application
 
-Launch the desktop application using:
-
 ```bash
 python main.py
 ```
 
-This starts the forensics dashboard, where the investigator can:
-- start or stop live monitoring
-- inspect events in the event stream
-- review suspicious activity
-- examine the evidence graph
-- inspect incident summaries
-- validate evidence integrity
+Typical workflow:
 
-## Testing
+1. Click **Start Monitoring** (banner turns LIVE)  
+2. Open **Activity** — generate events by opening a browser or saving a file  
+3. Open **Evidence Graph** — red = program, blue = internet destination  
+4. Review **Incident Summary** and **Needs attention** if anything stands out  
+5. Click **Stop Monitoring** — evidence stays saved; integrity is re-checked  
 
-The repository includes several test scripts to validate monitoring, offline evidence ingestion, file-system behavior, and Sysmon compatibility.
-
-Run tests individually or as a suite using Python modules such as:
-
-```bash
-python -m pytest
-```
-
-Example targeted checks:
-
-```bash
-python test_phase1.py
-python test_fs.py
-python test_offline_analysis.py
-python test_sysmon_adapter.py
-```
+Optional: **Offline Evidence (Advanced)** to import preserved files.  
+**Help → Quick tour** for a 30-second walkthrough.
 
 ## Evidence Workflow
-
-The project follows a typical forensic evidence lifecycle:
 
 ```text
 Collect raw events
@@ -203,51 +177,64 @@ Compute SHA-256 hash
     ↓
 Normalize into forensic schema
     ↓
-Store in database
+Store in SQLite
     ↓
 Correlate and graph related events
     ↓
-Classify suspicious activity
+Classify / flag suspicious activity
     ↓
-Reconstruct incident timeline
+Reconstruct incident stories
 ```
+
+Live evidence path: `data/evidence/<case_id>/<evidence_id>.json`  
+Graph cache: `data/<case_id>_graph.json`
 
 ## Data Model
 
-The system uses a relational database with evidence and event tables:
+| Table | Purpose |
+|-------|---------|
+| Case | Investigation container |
+| EvidenceArtifact | Saved file + hash + integrity status |
+| ForensicEvent | Normalized event linked to evidence |
+| AuditLog | Investigator / system actions |
 
-- Case
-- EvidenceArtifact
-- ForensicEvent
-- AuditLog
+## Testing
 
-Each event references its associated evidence artifact, making it easier to trace the event back to the original preserved source record.
+```bash
+python -m pytest
+```
+
+Targeted scripts:
+
+```bash
+python test_phase1.py
+python test_fs.py
+python test_offline_analysis.py
+python test_sysmon_adapter.py
+```
 
 ## Known Notes and Limitations
 
-This project is a research-oriented forensic monitoring prototype. Some components are still under active development and may have limitations depending on the operating system and environment.
+- Research / academic prototype — use only where you are authorized to monitor  
+- Live precision depends on polling intervals; short-lived processes may be missed  
+- Full network PID mapping on Windows may require elevated privileges  
+- Large graphs can be heavy; Simple view and debouncing reduce UI freeze risk  
+- Collectors watch **this PC only** — not remote endpoints  
 
-Examples include:
-- live monitoring precision depending on polling intervals
-- Windows-specific privilege requirements for deeper network inspection
-- graph correlation performance for large event volumes
-- extension of evidence integrity features for all live telemetry sources
+## Roadmap (planned)
 
-The technical audit report in this repository documents many implementation observations and improvement opportunities.
+- Light-theme **web app** in the same repository (`api/` + `web/`), reusing `core/`  
+- Separate DB/data paths so desktop and web do not clash when both are developed  
 
 ## Related Documentation
 
-- [technical_audit_report.md](technical_audit_report.md) – project audit and technical observations
-- [evaluation/run_evaluation.py](evaluation/run_evaluation.py) – evaluation automation entry point
+- [technical_audit_report.md](technical_audit_report.md) — earlier technical observations (some items may be outdated vs current GUI)
+- [evaluation/run_evaluation.py](evaluation/run_evaluation.py) — evaluation helpers
 
-## Contribution
+## Responsible Use
 
-This repository is suitable for academic use and forensic tool experimentation. Contributions, improvements, and refinements are welcome.
-
-## Notes
-
-This project is designed as a forensic monitoring and evidence exploration platform. It should be used responsibly and only in environments where you have proper authorization to investigate system activity.
+Use this software only in environments where you have proper authorization. Preserve originals before reprocessing, and maintain chain-of-custody discipline for real investigations.
 
 ---
 
-For any forensic or research use, maintain chain-of-custody discipline and preserve original evidence before making changes or reprocessing files.
+Contributions and refinements for academic and forensic experimentation are welcome.

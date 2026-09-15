@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { createCase } from "../api";
 
@@ -6,54 +6,66 @@ export function NewCasePage() {
   const navigate = useNavigate();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    setSaving(true);
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setError("Give this investigation a name.");
+      return;
+    }
+    setBusy(true);
     setError(null);
     try {
-      const created = await createCase(name.trim(), description.trim());
-      navigate(`/cases/${created.id}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      setSaving(false);
+      const created = await createCase({
+        name: trimmed,
+        description: description.trim() || undefined,
+      });
+      navigate(`/cases/${created.id}`, { replace: true });
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Could not create case");
+      setBusy(false);
     }
   }
 
   return (
-    <section className="panel narrow">
-      <Link to="/" className="nav__back linkish">
-        ← Back to Home
-      </Link>
+    <div>
       <h1>New investigation</h1>
-      <p className="muted">Give the case a clear name so anyone can find it later.</p>
-      <form className="form" onSubmit={onSubmit}>
-        <label>
-          Case name
+      <p className="lead">Name the case, then import evidence.</p>
+
+      <form className="panel form" onSubmit={(e) => void onSubmit(e)}>
+        <label className="field">
+          <span>Name</span>
           <input
-            required
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Lab exercise — USB sample"
+            placeholder="e.g. Laptop review — Sept 2025"
             maxLength={200}
+            autoFocus
+            required
           />
         </label>
-        <label>
-          Description (optional)
+        <label className="field">
+          <span>Description (optional)</span>
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={3}
-            placeholder="What are you investigating?"
+            placeholder="Short note about what you are looking into"
           />
         </label>
-        {error && <p className="error">{error}</p>}
-        <button className="btn btn--primary" type="submit" disabled={saving || !name.trim()}>
-          {saving ? "Creating…" : "Create case"}
-        </button>
+        {error && <p className="status-err">{error}</p>}
+        <div className="btn-row">
+          <button type="submit" className="btn btn--primary" disabled={busy}>
+            {busy ? "Creating…" : "Create investigation"}
+          </button>
+          <Link className="btn btn--ghost" to="/">
+            Cancel
+          </Link>
+        </div>
       </form>
-    </section>
+    </div>
   );
 }

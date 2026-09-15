@@ -1,5 +1,5 @@
-# Web API dependencies (install alongside or instead of desktop extras when developing web).
-# Desktop continues to use requirements.txt at repo root.
+# Web API — install from repo root with PYTHONPATH set.
+# Reuses core/ (SQLAlchemy, NetworkX, pandas). Live needs psutil.
 
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
@@ -11,5 +11,5 @@ networkx>=3.0
 pandas>=2.0.0
 psutil>=5.9.0
 
-# Optional (offline EVTX parsing via core report_parser — install if needed):
+# Optional (EVTX via core report_parser):
 # python-evtx

@@ -1,14 +1,15 @@
-"""Qt-free plain-language helpers for API DTOs."""
+"""Qt-free plain-language helpers — Phase A glossary aligned with desktop concepts."""
 
 from __future__ import annotations
 
 import os
 from typing import Any, Optional
 
+# Phase A: prefer everyday labels over desktop jargon
 CLASSIFICATION_LABELS = {
     "USER_ACTIVITY": "User action",
     "BACKGROUND_ACTIVITY": "Background noise",
-    "SUSPICIOUS_ACTIVITY": "Needs attention",
+    "SUSPICIOUS_ACTIVITY": "Needs a look",
     "CORRELATED_ACTIVITY": "Linked activity",
     "UNKNOWN": "Unclear",
 }
@@ -51,12 +52,13 @@ def _pretty_process(name: Optional[str]) -> str:
 
 
 def event_headline(event) -> str:
+    """One plain sentence — mirrors desktop format_event_sentence without Qt."""
     et = (event.event_type or "").lower()
     st = (event.source_type or "").lower()
     process = _pretty_process(event.process)
     file_name = _safe(event.file) or _basename(event.path)
     path = _safe(event.path)
-    ip = _safe(event.ip)
+    ip = _safe(event.ip) or _safe(getattr(event, "domain", None))
     user = _safe(event.user)
 
     if et in ("process_started", "process_created"):
@@ -80,10 +82,16 @@ def event_headline(event) -> str:
         return f"File changed: {file_name or path or 'unknown'}"
     if et == "file_deleted":
         return f"File deleted: {file_name or path or 'unknown'}"
+    if et == "file_moved":
+        return f"File moved/renamed: {file_name or path or 'unknown'}"
     if et == "download":
         return f"Download: {file_name or 'a file'}"
     if et in ("login", "logon"):
         return f"User signed in: {user or 'someone'}"
+    if et in ("usb_connected", "device_connected"):
+        return "USB device connected"
+    if et in ("usb_disconnected", "device_disconnected"):
+        return "USB device removed"
     if st == "network":
         return f"Network activity: {process} → {ip or 'remote host'}"
     if st == "filesystem":

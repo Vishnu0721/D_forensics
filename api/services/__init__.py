@@ -1,1 +1,1 @@
-"""Service package for web API."""
+"""Service package."""

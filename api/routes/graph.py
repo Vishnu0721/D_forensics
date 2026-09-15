@@ -1,4 +1,4 @@
-"""Evidence graph JSON for Connections UI."""
+"""Evidence graph JSON for Connections UI (Phase E)."""
 
 from __future__ import annotations
 
@@ -19,7 +19,6 @@ KIND_MAP = {
     "User": "user",
     "Device": "device",
 }
-
 
 MAX_GRAPH_NODES = 250
 MAX_GRAPH_EDGES = 500
@@ -68,7 +67,6 @@ def get_graph(
             edges=edges[:MAX_GRAPH_EDGES],
         )
 
-    # Simple view: collapse processes by name
     id_map: dict[str, str] = {}
     label_nodes: dict[str, GraphNode] = {}
     for node_id, data in graph.graph.nodes(data=True):
@@ -108,5 +106,5 @@ def get_graph(
 
     node_list = list(label_nodes.values())[:MAX_GRAPH_NODES]
     keep = {n.id for n in node_list}
-    trimmed_edges = [e for e in edges if e.source in keep and e.target in keep][:MAX_GRAPH_EDGES]
-    return GraphResponse(view="simple", nodes=node_list, edges=trimmed_edges)
+    trimmed = [e for e in edges if e.source in keep and e.target in keep][:MAX_GRAPH_EDGES]
+    return GraphResponse(view="simple", nodes=node_list, edges=trimmed)

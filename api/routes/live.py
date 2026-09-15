@@ -1,4 +1,4 @@
-"""Live monitoring control API (Phase 6) — web_data only."""
+"""Live monitoring control API (Phase H) — web_data only."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""In-memory analysis job tracker with per-case locking (Phase 7 hardening)."""
+"""In-memory analysis job tracker with per-case locking."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ class JobStore:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._jobs: OrderedDict[str, JobRecord] = OrderedDict()
-        self._case_active: dict[str, str] = {}  # case_id -> job_id
+        self._case_active: dict[str, str] = {}
 
     def create(self, case_id: str) -> JobRecord:
         with self._lock:
@@ -48,7 +48,6 @@ class JobStore:
             while len(self._jobs) > self.MAX_JOBS:
                 old_id, old = self._jobs.popitem(last=False)
                 if old.status in ("queued", "running"):
-                    # Don't evict active — put back and stop
                     self._jobs[old_id] = old
                     self._jobs.move_to_end(old_id)
                     break

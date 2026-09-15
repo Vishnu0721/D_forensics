@@ -26,7 +26,11 @@ def case_summary(db: Session, case: Case) -> CaseSummary:
     event_count = db.query(ForensicEvent).filter(ForensicEvent.case_id == case.id).count()
     meta = load_case_meta(case.id)
     live = live_monitor.status()
-    mode = "live" if (live.get("running") and live.get("case_id") == case.id) else meta.get("mode", "imported")
+    mode = (
+        "live"
+        if (live.get("running") and live.get("case_id") == case.id)
+        else meta.get("mode", "imported")
+    )
     if mode not in ("imported", "live"):
         mode = "imported"
     return CaseSummary(
@@ -52,3 +56,15 @@ def evidence_summary(artifact: EvidenceArtifact) -> EvidenceSummary:
         status_label=INTEGRITY_LABELS.get(status, status),
         created_at=artifact.collection_timestamp,
     )
+
+
+def overview_next_step(*, evidence_count: int, event_count: int, finding_count: int, live: bool) -> str:
+    if live:
+        return "Watching this PC. Stop when ready, then run Analyze to refresh Connections and Findings."
+    if evidence_count == 0:
+        return "Import evidence (or start watching this PC) to begin."
+    if event_count == 0:
+        return "Saved records are ready — run Analyze to build the timeline and connections."
+    if finding_count > 0:
+        return "Open Findings to review what needs a look, then check Connections."
+    return "Browse Timeline for the story, or Connections to see how programs link."

@@ -1,4 +1,4 @@
-"""Case export (Markdown / HTML) — Phase 5."""
+"""Case export (Markdown / HTML)."""
 
 from __future__ import annotations
 
@@ -47,25 +47,25 @@ def _as_markdown(case, generated, evidence, events, findings, stories, snapshot)
         "",
         "## Summary",
         "",
-        f"- Evidence files: **{len(evidence)}**",
-        f"- Events (showing up to 200): **{len(events)}**",
-        f"- Findings: **{len(findings)}**",
+        f"- Saved records: **{len(evidence)}**",
+        f"- Activity (up to 200): **{len(events)}**",
+        f"- Needs a look: **{len(findings)}**",
         f"- Activity stories: **{len(stories)}**",
-        f"- Relationships: **{snapshot.get('relationship_count', 0)}**",
+        f"- Links: **{snapshot.get('relationship_count', 0)}**",
         "",
-        "## Evidence integrity",
+        "## Integrity",
         "",
     ]
     if not evidence:
-        lines.append("_No evidence imported._")
+        lines.append("_No saved records._")
     else:
         for a in evidence:
             lines.append(
                 f"- **{a.filename}** — {a.integrity_status or 'PENDING'} — `{a.sha256_hash[:16]}…`"
             )
-    lines.extend(["", "## Findings", ""])
+    lines.extend(["", "## Needs a look", ""])
     if not findings:
-        lines.append("_No findings._")
+        lines.append("_Nothing flagged._")
     else:
         for f in findings:
             lines.append(f"- **{f.get('headline')}** ({f.get('severity_label')})")
@@ -81,12 +81,12 @@ def _as_markdown(case, generated, evidence, events, findings, stories, snapshot)
                 lines.append(f"  - {s.get('detail')}")
     lines.extend(["", "## Timeline (excerpt)", ""])
     if not events:
-        lines.append("_No events._")
+        lines.append("_No activity yet._")
     else:
         for ev in events:
             ts = ev.timestamp.isoformat() if ev.timestamp else "unknown"
             lines.append(f"- `{ts}` — {event_headline(ev)}")
-    lines.extend(["", "---", "", "_Digital Forensics web export (feature/webapp). Authorized use only._", ""])
+    lines.extend(["", "---", "", "_Digital Forensics web export. Authorized use only._", ""])
     return "\n".join(lines)
 
 
@@ -104,24 +104,24 @@ def _as_html(case, generated, evidence, events, findings, stories, snapshot) -> 
         f"<p class='muted'>Generated {esc(generated)}</p>",
         f"<p>{esc(case.description or 'No description')}</p>",
         "<h2>Summary</h2><ul>",
-        f"<li>Evidence files: <strong>{len(evidence)}</strong></li>",
-        f"<li>Events: <strong>{len(events)}</strong></li>",
-        f"<li>Findings: <strong>{len(findings)}</strong></li>",
+        f"<li>Saved records: <strong>{len(evidence)}</strong></li>",
+        f"<li>Activity: <strong>{len(events)}</strong></li>",
+        f"<li>Needs a look: <strong>{len(findings)}</strong></li>",
         f"<li>Activity stories: <strong>{len(stories)}</strong></li>",
-        f"<li>Relationships: <strong>{esc(snapshot.get('relationship_count', 0))}</strong></li>",
-        "</ul><h2>Evidence</h2><ul>",
+        f"<li>Links: <strong>{esc(snapshot.get('relationship_count', 0))}</strong></li>",
+        "</ul><h2>Saved records</h2><ul>",
     ]
     if not evidence:
-        parts.append("<li class='muted'>No evidence imported.</li>")
+        parts.append("<li class='muted'>No saved records.</li>")
     else:
         for a in evidence:
             parts.append(
                 f"<li><strong>{esc(a.filename)}</strong> — {esc(a.integrity_status)} — "
                 f"<code>{esc(a.sha256_hash[:16])}…</code></li>"
             )
-    parts.append("</ul><h2>Findings</h2><ul>")
+    parts.append("</ul><h2>Needs a look</h2><ul>")
     if not findings:
-        parts.append("<li class='muted'>No findings.</li>")
+        parts.append("<li class='muted'>Nothing flagged.</li>")
     else:
         for f in findings:
             parts.append(
@@ -130,10 +130,12 @@ def _as_html(case, generated, evidence, events, findings, stories, snapshot) -> 
             )
     parts.append("</ul><h2>Timeline</h2><ul>")
     if not events:
-        parts.append("<li class='muted'>No events.</li>")
+        parts.append("<li class='muted'>No activity yet.</li>")
     else:
         for ev in events:
             ts = ev.timestamp.isoformat() if ev.timestamp else "unknown"
             parts.append(f"<li><code>{esc(ts)}</code> — {esc(event_headline(ev))}</li>")
-    parts.append("</ul><hr/><p class='muted'>Digital Forensics web export. Authorized use only.</p></body></html>")
+    parts.append(
+        "</ul><hr/><p class='muted'>Digital Forensics web export. Authorized use only.</p></body></html>"
+    )
     return "".join(parts)

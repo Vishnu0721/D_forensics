@@ -1,4 +1,4 @@
-"""Timeline / event read APIs."""
+"""Timeline / event read APIs (Phase D)."""
 
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ router = APIRouter(prefix="/api/v1/cases/{case_id}/events", tags=["events"])
 FILTER_MAP = {
     "all": None,
     "user": "USER_ACTIVITY",
+    "background": "BACKGROUND_ACTIVITY",
     "findings": "SUSPICIOUS_ACTIVITY",
     "linked": "CORRELATED_ACTIVITY",
     "unclear": "UNKNOWN",
@@ -46,9 +47,9 @@ def list_events(
         query = query.filter(ForensicEvent.evidence_id == evidence_id)
     events = query.order_by(ForensicEvent.timestamp.asc()).all()
 
-    wanted = FILTER_MAP.get(filter, None)
     if filter not in FILTER_MAP:
         raise HTTPException(status_code=400, detail=f"Unknown filter: {filter}")
+    wanted = FILTER_MAP[filter]
 
     items: list[EventSummary] = []
     for ev in events:
@@ -69,8 +70,7 @@ def list_events(
         )
 
     total = len(items)
-    page = items[offset : offset + limit]
-    return EventPage(total=total, items=page)
+    return EventPage(total=total, items=items[offset : offset + limit])
 
 
 @router.get("/{event_id}", response_model=EventDetail)

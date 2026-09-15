@@ -1,74 +1,91 @@
-import { useTheme } from "../theme/ThemeProvider";
+import { useEffect, useState } from "react";
 import { GuidedTour } from "../components/GuidedTour";
-import { useState } from "react";
+
+const THEME_KEY = "df-theme";
 
 export function SettingsPage() {
-  const { theme, setTheme } = useTheme();
-  const [tourOpen, setTourOpen] = useState(false);
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [showTour, setShowTour] = useState(false);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(THEME_KEY);
+      if (stored === "dark" || stored === "light") {
+        setTheme(stored);
+        document.documentElement.setAttribute("data-theme", stored);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  function toggleTheme() {
+    const next = theme === "light" ? "dark" : "light";
+    setTheme(next);
+    document.documentElement.setAttribute("data-theme", next);
+    try {
+      localStorage.setItem(THEME_KEY, next);
+    } catch {
+      /* ignore */
+    }
+  }
 
   return (
-    <section className="panel">
-      {tourOpen && <GuidedTour forceOpen onClose={() => setTourOpen(false)} />}
+    <div>
       <h1>Settings</h1>
-      <p className="muted">
-        Local academic use on <code>feature/webapp</code> — no sign-in required in v1.
-      </p>
+      <p className="lead">About this web app and display preferences.</p>
 
-      <div className="settings-block">
-        <h2>Appearance</h2>
-        <p className="muted">Professional white &amp; blue light theme, with optional dark mode.</p>
-        <div className="view-toggle" role="group" aria-label="Theme">
-          <button
-            type="button"
-            className={theme === "light" ? "filter-chip filter-chip--active" : "filter-chip"}
-            onClick={() => setTheme("light")}
-          >
-            Light
-          </button>
-          <button
-            type="button"
-            className={theme === "dark" ? "filter-chip filter-chip--active" : "filter-chip"}
-            onClick={() => setTheme("dark")}
-          >
-            Dark
-          </button>
-        </div>
-      </div>
-
-      <div className="settings-block">
-        <h2>Help</h2>
-        <button type="button" className="btn btn--ghost" onClick={() => setTourOpen(true)}>
-          Replay quick tour
+      <section className="panel">
+        <h2>Theme</h2>
+        <p className="muted">
+          Light white + blue is the default. Dark is optional for low-light rooms.
+        </p>
+        <button type="button" className="btn btn--ghost" onClick={toggleTheme}>
+          Switch to {theme === "light" ? "dark" : "light"} theme
         </button>
-      </div>
+        <p className="muted" style={{ marginTop: "0.75rem" }}>
+          Current: <strong>{theme}</strong>
+        </p>
+      </section>
 
-      <div className="settings-block">
-        <h2>Data locations (web only)</h2>
-        <ul className="settings-list">
+      <section className="panel">
+        <h2>About</h2>
+        <p>
+          Digital Forensics web investigation UI. Same offline pipeline as the
+          desktop app, with one job per screen and plain language.
+        </p>
+        <ul className="list-plain">
+          <li>No sign-in in this academic build</li>
+          <li>Data stays under <code>web_data/</code> — not the desktop database</li>
           <li>
-            Web database: <code>web_data/forensics_web.db</code>
-          </li>
-          <li>
-            Preserved evidence: <code>web_data/evidence/</code>
-          </li>
-          <li>
-            Graphs: <code>web_data/graphs/</code>
+            Product decisions:{" "}
+            <a href="/docs/webapp/PHASE_A.md" onClick={(e) => e.preventDefault()}>
+              docs/webapp/PHASE_A.md
+            </a>{" "}
+            (see repo)
           </li>
         </ul>
         <p className="muted">
-          Desktop app keeps <code>forensics.db</code> / <code>data/</code>. Do not mix the two while
-          developing.
+          Open <code>docs/webapp/PHASE_A.md</code> in the repository for the clarity
+          contract, glossary, and information architecture.
         </p>
-      </div>
+      </section>
 
-      <div className="settings-block">
-        <h2>Live agent</h2>
-        <p className="muted">
-          Process + network collectors run inside the API process and write to{" "}
-          <code>web_data/</code>. Start/stop from Case Overview. Optional EVTX support:{" "}
-          <code>pip install python-evtx</code>.
-        </p>
-      </div>
-    </section>
+      <section className="panel">
+        <h2>Quick tour</h2>
+        <p className="muted">Replay the short optional tips overlay.</p>
+        <button
+          type="button"
+          className="btn btn--ghost"
+          onClick={() => setShowTour(true)}
+        >
+          Show tour
+        </button>
+      </section>
+
+      {showTour && (
+        <GuidedTour forceOpen onClose={() => setShowTour(false)} />
+      )}
+    </div>
   );
 }

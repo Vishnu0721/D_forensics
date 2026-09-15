@@ -17,9 +17,9 @@ Clarity and stability improvements on top of the original pipeline:
 - **Quick tour** (Help → Quick tour) for first-time users
 - Performance hardening: interruptible collectors, SQLite WAL, debounced graph updates, layout off the UI thread
 
-> A separate **light-theme web app** is available on branch `feature/webapp` (`api/` + `web/`).  
-> **Testers:** see **[web/README.md](web/README.md)** for setup and a full manual test plan.  
-> The desktop app on `main` remains the primary PySide6 UI.
+> A **light-theme web app** lives on branch `feature/webapp` (`api/` + `web/`).  
+> Phases **A–J** are implemented — see **[docs/webapp/PHASE_A.md](docs/webapp/PHASE_A.md)** and **[docs/webapp/PHASE_B_J.md](docs/webapp/PHASE_B_J.md)**.  
+> Testers: **[web/README.md](web/README.md)**. Desktop remains the primary PySide6 UI.
 
 ## Overview
 
@@ -225,48 +225,60 @@ python test_sysmon_adapter.py
 
 ## Web app (branch `feature/webapp`)
 
-Light-theme browser UI for offline investigation (import → timeline → findings → graph → integrity), plus optional local live monitoring. Uses **`web_data/`** only.
+Light **white + blue** investigation UI. Same forensic pipeline as the desktop (`core/`). Uses **`web_data/`** only.
 
-**For other testers — start here:** [web/README.md](web/README.md)
+**Docs:** [PHASE_A.md](docs/webapp/PHASE_A.md) · [PHASE_B_J.md](docs/webapp/PHASE_B_J.md) · [web/README.md](web/README.md)
 
 Quick start:
 
-```bash
+```powershell
 git checkout feature/webapp
 
-# Terminal 1 — API (from repo root)
-export PYTHONPATH="$(pwd)"   # PowerShell: $env:PYTHONPATH = (Get-Location).Path
+# Terminal 1 — API
+cd D:\D_forensics
+$env:PYTHONPATH = (Get-Location).Path
 pip install -r api/requirements.txt
 uvicorn api.main:app --reload --app-dir .
 
 # Terminal 2 — UI
-cd web && npm install && npm run dev
+cd web
+npm install
+npm run dev
 ```
 
-Then open http://127.0.0.1:5173 and follow the manual test plan in `web/README.md`.
+Open http://127.0.0.1:5173  
+API health: http://127.0.0.1:8000/health → `"phase": "J"`
 
 | Phase | Focus | Status |
 |-------|--------|--------|
-| 0 | Foundations, IA, design tokens, OpenAPI draft, data isolation | **Done** |
-| 1 | Cases, upload, analysis jobs, read APIs | **Done** |
-| 2 | Web shell wired to cases / Overview | **Done** |
-| 3 | Import wizard, Timeline, Findings | **Done** |
-| 4 | Connections (graph), Integrity | **Done** |
-| 5 | Tour, export, polish | **Done** |
-| 6 | Optional local live agent | **Done** |
-| 7 | Hardening & smoke tests | **Done** |
+| A | Foundations, IA, glossary, tokens | Done |
+| B | Case shell & home | Done |
+| C | Import + analysis jobs | Done |
+| D | Timeline | Done |
+| E | Connections (graph) | Done |
+| F | Findings + Integrity | Done |
+| G | Overview + export | Done |
+| H | Optional live watch | Done |
+| I | Desktop evidence bridge | Done |
+| J | Hardening & smoke | Done |
 
-See also [api/README.md](api/README.md), [docs/webapp/PHASE0.md](docs/webapp/PHASE0.md), [docs/webapp/PHASE5_6_7.md](docs/webapp/PHASE5_6_7.md).
+Smoke:
+
+```powershell
+$env:PYTHONPATH = (Get-Location).Path
+python api/smoke_phase_b_j.py
+```
 
 ## Roadmap notes
 
-Desktop and web are developed in parallel. Web data is isolated: `web_data/forensics_web.db` and `web_data/evidence/` (desktop keeps `forensics.db` / `data/`).
+Desktop and web develop in parallel. Web data stays under `web_data/`. Desktop bridge copies evidence folders; it does not share `forensics.db`.
 
 ## Related Documentation
 
 - [technical_audit_report.md](technical_audit_report.md) — earlier technical observations (some items may be outdated vs current GUI)
 - [evaluation/run_evaluation.py](evaluation/run_evaluation.py) — evaluation helpers
-- [docs/webapp/PHASE0.md](docs/webapp/PHASE0.md) — webapp Phase 0 decisions
+- [docs/webapp/PHASE_A.md](docs/webapp/PHASE_A.md) — webapp clarity contract
+- [docs/webapp/PHASE_B_J.md](docs/webapp/PHASE_B_J.md) — phases B–J notes
 
 ## Responsible Use
 

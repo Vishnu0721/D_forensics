@@ -1,4 +1,4 @@
-"""Case CRUD and overview."""
+"""Case CRUD and overview (Phase B + G)."""
 
 from __future__ import annotations
 
@@ -9,8 +9,9 @@ from sqlalchemy.orm import Session
 
 from api.db import get_db
 from api.schemas import CaseCreate, CaseDetail, CaseSummary, CaseUpdate, FindingSummary
-from api.serializers import case_summary, get_case_or_404
+from api.serializers import case_summary, get_case_or_404, overview_next_step
 from api.services.analysis import load_analysis_snapshot
+from api.services.live_monitor import live_monitor
 from core.database.models import Case
 
 router = APIRouter(prefix="/api/v1/cases", tags=["cases"])
@@ -56,6 +57,15 @@ def get_case(case_id: str, db: Session = Depends(get_db)):
         combined = findings + stories
         top_findings = [FindingSummary(**item) for item in combined[:3]]
 
+    live = live_monitor.status()
+    this_live = bool(live.get("running") and live.get("case_id") == case_id)
+    next_step = overview_next_step(
+        evidence_count=base.evidence_count,
+        event_count=base.event_count,
+        finding_count=finding_count,
+        live=this_live,
+    )
+
     return CaseDetail(
         **base.model_dump(),
         last_analysis_at=last_analysis_at,
@@ -63,6 +73,7 @@ def get_case(case_id: str, db: Session = Depends(get_db)):
         relationship_count=relationship_count,
         finding_count=finding_count,
         story_count=story_count,
+        next_step=next_step,
     )
 
 

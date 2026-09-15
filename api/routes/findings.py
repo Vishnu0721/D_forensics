@@ -1,4 +1,4 @@
-"""Findings and activity stories."""
+"""Findings and activity stories (Phase F)."""
 
 from __future__ import annotations
 

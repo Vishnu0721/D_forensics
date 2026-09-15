@@ -1,62 +1,51 @@
 import { useEffect, useState } from "react";
 
-const STORAGE_KEY = "df-web-tour-v1";
+const TOUR_KEY = "df-guided-tour-dismissed";
 
 const STEPS = [
   {
-    title: "Welcome",
-    body: "This is the web investigation app on branch feature/webapp. It uses web_data/ only — separate from the desktop app.",
+    title: "Start with Import",
+    body: "Bring evidence files into a case first. Analysis runs after you have saved records.",
   },
   {
-    title: "Create or open a case",
-    body: "Every investigation lives in a case. Start from Home → New investigation, then import evidence. Click any case card to open it.",
+    title: "Overview tells you what’s next",
+    body: "Each case overview shows a plain next step — not a wall of counters.",
   },
   {
-    title: "Import → Timeline → Findings",
-    body: "Use the Import wizard, then read the Timeline and Findings. Connections and Integrity deepen the story.",
+    title: "Timeline and Connections",
+    body: "Timeline is the only activity list. Connections shows who and what is linked.",
   },
-  {
-    title: "Optional live monitor",
-    body: "On Overview you can start local live monitoring for this PC only. Stop it before offline re-analysis.",
-  },
-];
+] as const;
 
-type Props = {
+type GuidedTourProps = {
   forceOpen?: boolean;
   onClose?: () => void;
 };
 
-export function GuidedTour({ forceOpen = false, onClose }: Props) {
+export function GuidedTour({ forceOpen = false, onClose }: GuidedTourProps) {
   const [open, setOpen] = useState(false);
-  const [step, setStep] = useState(0);
+  const [index, setIndex] = useState(0);
 
   useEffect(() => {
     if (forceOpen) {
       setOpen(true);
-      setStep(0);
+      setIndex(0);
       return;
     }
     try {
-      if (!localStorage.getItem(STORAGE_KEY)) setOpen(true);
+      if (localStorage.getItem(TOUR_KEY) !== "1") setOpen(true);
     } catch {
       setOpen(true);
     }
   }, [forceOpen]);
 
-  useEffect(() => {
-    if (!open) return;
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") finish();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, step]);
-
-  function finish() {
-    try {
-      localStorage.setItem(STORAGE_KEY, "1");
-    } catch {
-      /* ignore */
+  function dismiss(permanent: boolean) {
+    if (permanent) {
+      try {
+        localStorage.setItem(TOUR_KEY, "1");
+      } catch {
+        /* ignore */
+      }
     }
     setOpen(false);
     onClose?.();
@@ -64,38 +53,39 @@ export function GuidedTour({ forceOpen = false, onClose }: Props) {
 
   if (!open) return null;
 
-  const current = STEPS[step];
-  const last = step >= STEPS.length - 1;
+  const step = STEPS[index];
+  const last = index === STEPS.length - 1;
 
   return (
-    <div
-      className="tour-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="tour-title"
-      onClick={finish}
-    >
-      <div
-        className="tour-card panel"
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => e.stopPropagation()}
-      >
-        <p className="badge badge--phase">
-          Quick tour · {step + 1}/{STEPS.length}
+    <div className="tour-backdrop" role="dialog" aria-label="Quick tour">
+      <div className="tour-card">
+        <p className="tour-card__progress">
+          Tip {index + 1} of {STEPS.length}
         </p>
-        <h2 id="tour-title">{current.title}</h2>
-        <p className="muted">{current.body}</p>
-        <p className="muted hint">Press Esc or click outside to close, then open a case card.</p>
-        <div className="wizard__actions">
-          <button type="button" className="btn btn--ghost" onClick={finish}>
+        <h2>{step.title}</h2>
+        <p className="muted">{step.body}</p>
+        <div className="btn-row">
+          <button
+            type="button"
+            className="btn btn--ghost"
+            onClick={() => dismiss(true)}
+          >
             Skip
           </button>
           {!last ? (
-            <button type="button" className="btn btn--primary" onClick={() => setStep((s) => s + 1)}>
+            <button
+              type="button"
+              className="btn btn--primary"
+              onClick={() => setIndex((i) => i + 1)}
+            >
               Next
             </button>
           ) : (
-            <button type="button" className="btn btn--primary" onClick={finish}>
+            <button
+              type="button"
+              className="btn btn--primary"
+              onClick={() => dismiss(true)}
+            >
               Got it
             </button>
           )}

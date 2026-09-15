@@ -1,4 +1,4 @@
-"""Analysis jobs."""
+"""Analysis jobs (Phase C) — same offline pipeline as desktop."""
 
 from __future__ import annotations
 
@@ -30,8 +30,7 @@ def _job_to_schema(job) -> JobStatus:
 
 
 def _run_job(job_id: str, case_id: str, evidence_ids: list[str] | None) -> None:
-    SessionLocal = get_session_factory()
-    db = SessionLocal()
+    db = get_session_factory()()
 
     def progress(msg: str) -> None:
         current = job_store.get(job_id)
@@ -85,19 +84,18 @@ def start_analysis(
     if live.get("running") and live.get("case_id") == case_id:
         raise HTTPException(
             status_code=409,
-            detail="Stop live monitoring before running offline analysis on this case.",
+            detail="Stop live monitoring before running analysis on this case.",
         )
     evidence_ids = body.evidence_ids if body else None
     try:
         job = job_store.create(case_id)
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    thread = threading.Thread(
+    threading.Thread(
         target=_run_job,
         args=(job.id, case_id, evidence_ids),
         daemon=True,
-    )
-    thread.start()
+    ).start()
     return _job_to_schema(job)
 
 

@@ -1,142 +1,137 @@
 import { useCallback, useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
-import {
-  IntegrityResponse,
-  listIntegrity,
-  verifyIntegrity,
-} from "../api";
+import { Link, useParams } from "react-router-dom";
+import { listIntegrity, verifyIntegrity, type IntegrityResponse } from "../api";
 
 export function IntegrityPage() {
-  const { caseId } = useParams();
+  const { caseId = "" } = useParams();
   const [data, setData] = useState<IntegrityResponse | null>(null);
-  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    if (!caseId) return;
-    setLoading(true);
-    setError(null);
-    try {
-      setData(await listIntegrity(caseId));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
+  const refresh = useCallback(async () => {
+    const res = await listIntegrity(caseId);
+    setData(res);
   }, [caseId]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    let cancelled = false;
+    refresh()
+      .then(() => {
+        if (!cancelled) setError(null);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Could not load integrity");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [refresh]);
 
   async function onVerify() {
-    if (!caseId) return;
     setBusy(true);
     setError(null);
     try {
-      setData(await verifyIntegrity(caseId));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      const res = await verifyIntegrity(caseId);
+      setData(res);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Verify failed");
     } finally {
       setBusy(false);
     }
   }
 
-  if (!caseId) return null;
-
   return (
-    <div className="integrity-page">
-      <section className="panel">
-        <header className="integrity-header">
-          <div>
-            <h1>Integrity</h1>
-            <p className="muted">
-              We check that <strong>our saved copies</strong> of evidence still match their SHA-256
-              fingerprints — not original files on another computer.
-            </p>
-          </div>
-          <button
-            type="button"
-            className="btn btn--primary"
-            disabled={busy || loading}
-            onClick={onVerify}
-          >
-            {busy ? "Verifying…" : "Verify now"}
-          </button>
-        </header>
+    <div>
+      <h1>Integrity</h1>
+      <p className="lead">Are preserved files still intact?</p>
 
-        {loading && <p className="muted">Loading integrity table…</p>}
-        {error && <p className="error">{error}</p>}
+      <div className="btn-row" style={{ marginBottom: "1.25rem" }}>
+        <button
+          type="button"
+          className="btn btn--primary"
+          disabled={busy}
+          onClick={() => void onVerify()}
+        >
+          {busy ? "Checking…" : "Verify now"}
+        </button>
+      </div>
 
-        {data && (
-          <>
-            <div className="legend-row">
-              {Object.entries(data.legend).map(([key, help]) => (
-                <div key={key} className="legend-item">
-                  <strong>{statusLabel(key, data)}</strong>
-                  <span className="muted">{help}</span>
-                </div>
+      {error && <p className="status-err">{error}</p>}
+
+      {data && data.items.length === 0 && (
+        <section className="empty-state">
+          <h2>No saved records</h2>
+          <p className="muted">Import evidence first, then verify integrity.</p>
+          <Link className="btn btn--primary" to={`/cases/${caseId}/import`}>
+            Import evidence
+          </Link>
+        </section>
+      )}
+
+      {data && data.items.length > 0 && (
+        <section className="panel">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Status</th>
+                <th>What</th>
+                <th>Hash (secondary)</th>
+                <th>Collected</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.items.map((row) => (
+                <tr key={row.evidence_id}>
+                  <td>
+                    <span className={`badge badge--${statusBadge(row.status_label)}`}>
+                      {row.status_label}
+                    </span>
+                  </td>
+                  <td>{row.what}</td>
+                  <td className="mono muted hash-cell">{row.sha256_hash}</td>
+                  <td className="muted">
+                    {row.collected_at ? formatWhen(row.collected_at) : "—"}
+                  </td>
+                </tr>
               ))}
-            </div>
+            </tbody>
+          </table>
+        </section>
+      )}
 
-            {data.items.length === 0 ? (
-              <div className="empty">
-                <p>No preserved evidence yet.</p>
-                <p className="muted">Import a file first, then verify fingerprints here.</p>
-              </div>
-            ) : (
-              <div className="table-wrap">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>What it is</th>
-                      <th>Status</th>
-                      <th>Fingerprint (SHA-256)</th>
-                      <th>Collected</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.items.map((row) => (
-                      <tr key={row.evidence_id}>
-                        <td>
-                          <strong>{row.what}</strong>
-                          <div className="muted mono" style={{ fontSize: "0.75rem" }}>
-                            {row.evidence_id.slice(0, 8)}…
-                          </div>
-                        </td>
-                        <td>
-                          <span className={`status-pill status-pill--${row.status.toLowerCase()}`}>
-                            {row.status_label}
-                          </span>
-                        </td>
-                        <td className="mono fingerprint">{row.sha256_hash}</td>
-                        <td className="muted">
-                          {row.collected_at
-                            ? new Date(row.collected_at).toLocaleString()
-                            : "—"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </>
-        )}
-      </section>
+      {data && Object.keys(data.legend).length > 0 && (
+        <section className="panel">
+          <h2>Legend</h2>
+          <ul className="list-plain">
+            {Object.entries(data.legend).map(([key, text]) => (
+              <li key={key}>
+                <strong>{key}</strong> — {text}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   );
 }
 
-function statusLabel(key: string, data: IntegrityResponse): string {
-  const sample = data.items.find((i) => i.status === key);
-  if (sample) return sample.status_label;
-  const map: Record<string, string> = {
-    VALID: "Unchanged",
-    MODIFIED: "Changed on disk",
-    UNVERIFIABLE: "File missing",
-    PENDING: "Not checked yet",
-  };
-  return map[key] || key;
+function statusBadge(label: string): string {
+  const lower = label.toLowerCase();
+  if (lower.includes("intact") || lower.includes("ok") || lower.includes("valid")) {
+    return "ok";
+  }
+  if (lower.includes("fail") || lower.includes("mismatch") || lower.includes("changed")) {
+    return "danger";
+  }
+  return "warn";
+}
+
+function formatWhen(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return iso;
+  }
 }

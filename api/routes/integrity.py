@@ -1,4 +1,4 @@
-"""Integrity list + verify."""
+"""Integrity list + verify (Phase F) — human status first."""
 
 from __future__ import annotations
 

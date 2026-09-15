@@ -1,5 +1,6 @@
 /**
- * Professional white + blue theme (light default) with dark mode.
+ * Phase A — light-first white + blue tokens.
+ * Dark theme is reserved for a later phase; do not ship dark as default.
  */
 
 :root,
@@ -27,60 +28,11 @@
   --df-danger-bg: #fdecea;
   --df-info: #1a56db;
   --df-info-bg: #e8effc;
-  --df-pending: #5a6f8a;
-  --df-pending-bg: #eef2f6;
-
-  --df-node-process: #1a56db;
-  --df-node-file: #0f7a45;
-  --df-node-ip: #7c3aed;
-  --df-node-user: #0e7490;
-  --df-node-device: #b45309;
-  --df-node-other: #64748b;
 
   --df-header-bg: rgba(255, 255, 255, 0.92);
   --df-shadow: 0 1px 2px rgba(15, 31, 51, 0.06), 0 8px 24px rgba(26, 86, 219, 0.04);
 
   color-scheme: light;
-}
-
-[data-theme="dark"] {
-  --df-bg: #0b1220;
-  --df-bg-accent: #111a2e;
-  --df-surface: #141e30;
-  --df-surface-muted: #1a2538;
-  --df-border: #2a3a55;
-  --df-border-strong: #3d5275;
-
-  --df-text: #e8eef8;
-  --df-text-muted: #9aacc4;
-  --df-text-inverse: #ffffff;
-
-  --df-accent: #5b8def;
-  --df-accent-hover: #7aa3f5;
-  --df-accent-soft: #1a2f55;
-
-  --df-ok: #34d399;
-  --df-ok-bg: #0f2a1e;
-  --df-warn: #fbbf24;
-  --df-warn-bg: #2a2208;
-  --df-danger: #f87171;
-  --df-danger-bg: #2a1212;
-  --df-info: #5b8def;
-  --df-info-bg: #15233f;
-  --df-pending: #9aacc4;
-  --df-pending-bg: #1a2538;
-
-  --df-node-process: #5b8def;
-  --df-node-file: #34d399;
-  --df-node-ip: #a78bfa;
-  --df-node-user: #22d3ee;
-  --df-node-device: #fbbf24;
-  --df-node-other: #94a3b8;
-
-  --df-header-bg: rgba(11, 18, 32, 0.92);
-  --df-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 24px rgba(0, 0, 0, 0.25);
-
-  color-scheme: dark;
 }
 
 :root {
@@ -139,6 +91,7 @@ h3 {
   font-weight: 600;
   line-height: 1.25;
   color: var(--df-text);
+  margin: 0 0 var(--df-space-3);
 }
 
 a {
@@ -153,4 +106,35 @@ code,
 .mono {
   font-family: var(--df-font-mono);
   font-size: 0.92em;
+}
+
+[data-theme="dark"] {
+  --df-bg: #0f1623;
+  --df-bg-accent: #162033;
+  --df-surface: #172033;
+  --df-surface-muted: #1c2a40;
+  --df-border: #2d3f5c;
+  --df-border-strong: #4a6288;
+
+  --df-text: #e8eef7;
+  --df-text-muted: #9aacc4;
+  --df-text-inverse: #0f1f33;
+
+  --df-accent: #5b8def;
+  --df-accent-hover: #7aa3f5;
+  --df-accent-soft: #1a2d52;
+
+  --df-ok: #3ecf8e;
+  --df-ok-bg: #143528;
+  --df-warn: #e0b24a;
+  --df-warn-bg: #3a2f12;
+  --df-danger: #f07167;
+  --df-danger-bg: #3a1a18;
+  --df-info: #5b8def;
+  --df-info-bg: #1a2d52;
+
+  --df-header-bg: rgba(23, 32, 51, 0.92);
+  --df-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 24px rgba(0, 0, 0, 0.25);
+
+  color-scheme: dark;
 }

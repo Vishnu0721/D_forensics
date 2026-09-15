@@ -1,4 +1,7 @@
-"""Web-only paths and settings — isolated from the desktop app."""
+"""Web-only paths and settings — isolated from the desktop app.
+
+Phase A: ensure directories exist. No database init until a later phase.
+"""
 
 from __future__ import annotations
 
@@ -8,12 +11,11 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Repository root (parent of api/)
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 class Settings(BaseSettings):
-    """Configuration for the web API. Desktop continues using forensics.db / data/."""
+    """Configuration for the web API. Desktop keeps forensics.db / data/."""
 
     model_config = SettingsConfigDict(
         env_prefix="FORENSICS_WEB_",
@@ -22,7 +24,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "Digital Forensics Web API"
-    app_version: str = "0.0.1"
+    app_version: str = "0.1.0-a"
     debug: bool = False
 
     # Isolated from desktop: forensics.db and data/
@@ -47,6 +49,7 @@ class Settings(BaseSettings):
         return self.data_root / "graphs"
 
     def ensure_directories(self) -> None:
+        """Create empty web_data layout. Does not create or open a database."""
         self.data_root.mkdir(parents=True, exist_ok=True)
         self.evidence_dir.mkdir(parents=True, exist_ok=True)
         self.graphs_dir.mkdir(parents=True, exist_ok=True)

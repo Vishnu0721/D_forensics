@@ -1,8 +1,5 @@
 from typing import List, Dict, Any
-from PySide6.QtCore import QObject, Signal, Slot
-import time
 from core.database.models import ForensicEvent
-from core.database import SessionLocal
 from core.services.graph import (
     make_process_entity,
     make_ip_entity,
@@ -10,6 +7,9 @@ from core.services.graph import (
     make_user_entity,
     make_device_entity,
 )
+
+# Qt is only required for CorrelationWorker (desktop). Pure correlate_* functions
+# stay importable from the web API without PySide6.
 
 # Configurable weights for confidence scoring
 WEIGHTS = {
@@ -270,62 +270,72 @@ def correlate_new_event(new_event: ForensicEvent, history: List[ForensicEvent], 
     return relationships
 
 
-class CorrelationWorker(QObject):
-    correlations_found = Signal(list)
-    graph_updated = Signal(object) # emits nx_graph snapshot
-    suspicious_updated = Signal(list)
-    incidents_updated = Signal(list)
-    analysis_error = Signal(str)
+def _make_correlation_worker_class():
+    """Lazy Qt worker so web can import correlate_events without PySide6."""
+    from PySide6.QtCore import QObject, Signal, Slot
+    from core.database import SessionLocal
 
-    def __init__(self, case_id: str, graph_db):
-        super().__init__()
-        self.case_id = case_id
-        self.graph_db = graph_db
-        # We will keep a reference to graph_db, but we should not do heavy modifications 
-        # unless synchronized. Actually, graph_db is thread-safe for simple adds, but networkx is not entirely.
-        
-    @Slot(list)
-    def process_batch(self, events: List[ForensicEvent]):
-        if not events:
-            return
-            
-        start_time = time.perf_counter()
-        db = SessionLocal()
-        try:
-            # Query history once for the batch
-            history = db.query(ForensicEvent).filter(ForensicEvent.case_id == self.case_id).order_by(ForensicEvent.timestamp.desc()).limit(100).all()
-            
-            all_new_relationships = []
-            
-            for event in events:
-                # We could optimize by correlating the whole batch against history, but correlate_new_event expects one
-                rels = correlate_new_event(event, history, max_window_seconds=120)
-                if rels:
-                    all_new_relationships.extend(rels)
-                    
-            if all_new_relationships:
-                # Add to graph
-                self.graph_db.populate_from_correlations(all_new_relationships)
-                
-                # Snapshot graph for analysis
-                graph_snapshot = self.graph_db.graph.copy()
-                
-                # Run heavy analysis
-                from core.services.suspicious import detect_suspicious_activity
-                from core.services.reconstruction import reconstruct_incidents
-                
-                suspicious = detect_suspicious_activity(graph_snapshot)
-                incidents = reconstruct_incidents(graph_snapshot, suspicious)
-                
-                self.correlations_found.emit(all_new_relationships)
-                self.graph_updated.emit(graph_snapshot)
-                self.suspicious_updated.emit(suspicious)
-                self.incidents_updated.emit(incidents)
-                
-        except Exception as e:
-            self.analysis_error.emit(str(e))
-        finally:
-            db.close()
-            
-        elapsed = (time.perf_counter() - start_time) * 1000
-        print(f"[PERF] correlation and analysis: {elapsed:.2f} ms")
+    class CorrelationWorker(QObject):
+        correlations_found = Signal(list)
+        graph_updated = Signal(object)  # emits nx_graph snapshot
+        suspicious_updated = Signal(list)
+        incidents_updated = Signal(list)
+        analysis_error = Signal(str)
+
+        def __init__(self, case_id: str, graph_db):
+            super().__init__()
+            self.case_id = case_id
+            self.graph_db = graph_db
+
+        @Slot(list)
+        def process_batch(self, events: List[ForensicEvent]):
+            if not events:
+                return
+
+            db = SessionLocal()
+            try:
+                history = (
+                    db.query(ForensicEvent)
+                    .filter(ForensicEvent.case_id == self.case_id)
+                    .order_by(ForensicEvent.timestamp.desc())
+                    .limit(100)
+                    .all()
+                )
+
+                all_new_relationships = []
+                for event in events:
+                    rels = correlate_new_event(event, history, max_window_seconds=120)
+                    if rels:
+                        all_new_relationships.extend(rels)
+
+                if all_new_relationships:
+                    self.graph_db.populate_from_correlations(all_new_relationships)
+                    graph_snapshot = self.graph_db.graph.copy()
+                    from core.services.suspicious import detect_suspicious_activity
+                    from core.services.reconstruction import reconstruct_incidents
+
+                    suspicious = detect_suspicious_activity(graph_snapshot)
+                    incidents = reconstruct_incidents(graph_snapshot, suspicious)
+
+                    self.correlations_found.emit(all_new_relationships)
+                    self.graph_updated.emit(graph_snapshot)
+                    self.suspicious_updated.emit(suspicious)
+                    self.incidents_updated.emit(incidents)
+            except Exception as e:
+                self.analysis_error.emit(str(e))
+            finally:
+                db.close()
+
+    return CorrelationWorker
+
+
+class _CorrelationWorkerProxy:
+    _cls = None
+
+    def __call__(self, *args, **kwargs):
+        if self._cls is None:
+            self._cls = _make_correlation_worker_class()
+        return self._cls(*args, **kwargs)
+
+
+CorrelationWorker = _CorrelationWorkerProxy()

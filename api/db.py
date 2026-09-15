@@ -11,6 +11,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from api.config import get_settings
 from core.database.engine import Base
 
+# Register model tables on Base.metadata
+from core.database import models as _models  # noqa: F401
+
 _engine: Engine | None = None
 _SessionLocal: sessionmaker | None = None
 
@@ -26,7 +29,7 @@ def get_engine() -> Engine:
         )
 
         @event.listens_for(_engine, "connect")
-        def _set_sqlite_pragma(dbapi_connection, connection_record):
+        def _set_sqlite_pragma(dbapi_connection, _connection_record):
             cursor = dbapi_connection.cursor()
             cursor.execute("PRAGMA journal_mode=WAL")
             cursor.execute("PRAGMA synchronous=NORMAL")

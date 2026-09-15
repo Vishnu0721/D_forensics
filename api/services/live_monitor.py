@@ -1,8 +1,8 @@
 """
 Web live monitor — process + network polling for THIS PC only.
 
-Uses web_data/ + web DB exclusively. Does NOT use desktop Qt MonitoringManager
-or data/evidence/ (keeps feature/webapp isolated from the desktop app).
+Mirrors desktop collectors conceptually (psutil process/network) but does NOT use
+Qt MonitoringManager or desktop data/ paths. Writes only under web_data/.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ class LiveMonitorError(Exception):
 
 
 class WebLiveMonitor:
-    """Singleton-style controller: at most one live case at a time."""
+    """At most one live case at a time."""
 
     def __init__(self) -> None:
         self._lock = threading.RLock()
@@ -83,13 +83,16 @@ class WebLiveMonitor:
         with self._lock:
             case_id = self._case_id
             self._running = False
-        # Join outside lock with timeout
         for t in list(self._threads):
             t.join(timeout=3.0)
         with self._lock:
             self._threads = []
             if case_id:
-                save_case_meta(case_id, mode="imported", live_stopped_at=datetime.now(timezone.utc).isoformat())
+                save_case_meta(
+                    case_id,
+                    mode="imported",
+                    live_stopped_at=datetime.now(timezone.utc).isoformat(),
+                )
             status = self.status()
             self._case_id = None
             self._started_at = None
@@ -108,10 +111,8 @@ class WebLiveMonitor:
             evidence_dir.mkdir(parents=True, exist_ok=True)
             filename = f"{evidence_id}.json"
             file_path = evidence_dir / filename
-            raw_json = json.dumps(raw_event, sort_keys=True)
-            disk_bytes = raw_json.encode("utf-8")
+            disk_bytes = json.dumps(raw_event, sort_keys=True).encode("utf-8")
             file_path.write_bytes(disk_bytes)
-            event_hash = hashlib.sha256(disk_bytes).hexdigest()
 
             evidence = EvidenceArtifact(
                 id=evidence_id,
@@ -120,7 +121,7 @@ class WebLiveMonitor:
                 source_type=raw_event.get("source_type") or "process",
                 original_path=str(file_path.resolve()),
                 file_size=len(disk_bytes),
-                sha256_hash=event_hash,
+                sha256_hash=hashlib.sha256(disk_bytes).hexdigest(),
                 mime_type="application/json",
                 created_by="web_live_monitor",
                 integrity_status="VALID",
@@ -131,8 +132,7 @@ class WebLiveMonitor:
 
             normalizer = NORMALIZERS.get(raw_event.get("source_type"))
             if normalizer:
-                forensic_event = normalizer(raw_event, case_id, evidence.id)
-                db.add(forensic_event)
+                db.add(normalizer(raw_event, case_id, evidence.id))
                 db.commit()
 
             with self._lock:
@@ -159,8 +159,7 @@ class WebLiveMonitor:
             while self._running:
                 try:
                     current = set(psutil.pids())
-                    new_pids = current - self._seen_pids
-                    for pid in list(new_pids)[:40]:
+                    for pid in list(current - self._seen_pids)[:40]:
                         if not self._running:
                             break
                         self._emit_process_start(pid)
@@ -196,19 +195,20 @@ class WebLiveMonitor:
                 exe_path = p.exe()
             except Exception:
                 exe_path = "Unavailable"
-            event = {
-                "timestamp": datetime.utcnow().isoformat() + "Z",
-                "source_type": "process",
-                "event_type": "process_started",
-                "pid": pid,
-                "process": p.name() if hasattr(p, "name") else "Unavailable",
-                "parent_process": parent_name,
-                "user": user,
-                "path": exe_path,
-                "cmdline": cmdline,
-                "sha256": "Unavailable",
-            }
-            self._persist(event)
+            self._persist(
+                {
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "source_type": "process",
+                    "event_type": "process_started",
+                    "pid": pid,
+                    "process": p.name() if hasattr(p, "name") else "Unavailable",
+                    "parent_process": parent_name,
+                    "user": user,
+                    "path": exe_path,
+                    "cmdline": cmdline,
+                    "sha256": "Unavailable",
+                }
+            )
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             return
 
@@ -222,7 +222,9 @@ class WebLiveMonitor:
                         )
             except psutil.AccessDenied:
                 with self._lock:
-                    self._last_error = "Network collector needs elevated privileges for full PID mapping."
+                    self._last_error = (
+                        "Network collector needs elevated privileges for full PID mapping."
+                    )
 
             while self._running:
                 try:
@@ -241,17 +243,18 @@ class WebLiveMonitor:
                                 process_name = psutil.Process(conn.pid).name()
                             except Exception:
                                 pass
-                        event = {
-                            "timestamp": datetime.utcnow().isoformat() + "Z",
-                            "source_type": "network",
-                            "event_type": "connection",
-                            "process": process_name,
-                            "pid": pid,
-                            "ip": conn.raddr.ip,
-                            "port": conn.raddr.port,
-                            "protocol": "TCP" if conn.type == 1 else "UDP",
-                        }
-                        self._persist(event)
+                        self._persist(
+                            {
+                                "timestamp": datetime.utcnow().isoformat() + "Z",
+                                "source_type": "network",
+                                "event_type": "connection",
+                                "process": process_name,
+                                "pid": pid,
+                                "ip": conn.raddr.ip,
+                                "port": conn.raddr.port,
+                                "protocol": "TCP" if conn.type == 1 else "UDP",
+                            }
+                        )
                     self._seen_conns = current
                 except psutil.AccessDenied:
                     with self._lock:

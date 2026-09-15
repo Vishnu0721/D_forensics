@@ -1,65 +1,32 @@
-import { Link, NavLink } from "react-router-dom";
-import { useTheme } from "../theme/ThemeProvider";
+import { Link } from "react-router-dom";
 
-type Props = {
-  caseId?: string;
-  caseName?: string;
+type AppHeaderProps = {
+  title?: string;
+  subtitle?: string;
+  backTo?: string;
+  backLabel?: string;
 };
 
-export function AppHeader({ caseId, caseName }: Props) {
-  const { theme, toggleTheme } = useTheme();
-
+export function AppHeader({
+  title = "Digital Forensics",
+  subtitle,
+  backTo,
+  backLabel = "All investigations",
+}: AppHeaderProps) {
   return (
-    <header className="app-header">
-      <div className="app-header__inner">
-        <div className="app-header__brand">
-          <Link to="/" className="app-header__logo">
-            <span className="app-header__mark" aria-hidden />
-            <span>
-              <strong>Digital Forensics</strong>
-              <span className="app-header__tagline">Investigate evidence clearly</span>
-            </span>
+    <header className="header">
+      <div className="header__left">
+        <Link className="header__brand" to="/">
+          {title}
+        </Link>
+        {subtitle && <span className="header__case">{subtitle}</span>}
+      </div>
+      <div className="header__meta">
+        {backTo && (
+          <Link className="header__back" to={backTo}>
+            {backLabel}
           </Link>
-          {caseName && (
-            <span className="app-header__case muted" title={caseName}>
-              / {caseName}
-            </span>
-          )}
-        </div>
-
-        <nav className="app-header__nav" aria-label="Site">
-          <NavLink
-            to="/"
-            end
-            className={({ isActive }) =>
-              isActive ? "app-header__link app-header__link--active" : "app-header__link"
-            }
-          >
-            Home
-          </NavLink>
-          {caseId && (
-            <NavLink
-              to={`/cases/${caseId}`}
-              end
-              className={({ isActive }) =>
-                isActive ? "app-header__link app-header__link--active" : "app-header__link"
-              }
-            >
-              Case
-            </NavLink>
-          )}
-          <Link to="/cases/new" className="app-header__link">
-            New investigation
-          </Link>
-          <button
-            type="button"
-            className="theme-toggle"
-            onClick={toggleTheme}
-            aria-label={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
-          >
-            {theme === "light" ? "Dark" : "Light"}
-          </button>
-        </nav>
+        )}
       </div>
     </header>
   );

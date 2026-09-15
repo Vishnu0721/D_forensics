@@ -1,4 +1,4 @@
-"""Per-case web metadata (mode, tour flags) — stored under web_data only."""
+"""Per-case web metadata — stored under web_data only."""
 
 from __future__ import annotations
 

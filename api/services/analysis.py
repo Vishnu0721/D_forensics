@@ -1,4 +1,4 @@
-"""Case analysis helpers: run pipeline and persist snapshot under web_data."""
+"""Case analysis helpers: run desktop offline pipeline; persist under web_data."""
 
 from __future__ import annotations
 
@@ -28,8 +28,7 @@ def analysis_snapshot_path(case_id: str) -> Path:
 
 
 def graph_for_case(case_id: str) -> EvidenceGraph:
-    settings = get_settings()
-    return EvidenceGraph(case_id, storage_dir=str(settings.graphs_dir))
+    return EvidenceGraph(case_id, storage_dir=str(get_settings().graphs_dir))
 
 
 def load_analysis_snapshot(case_id: str) -> Optional[dict[str, Any]]:
@@ -43,8 +42,9 @@ def load_analysis_snapshot(case_id: str) -> Optional[dict[str, Any]]:
 
 
 def save_analysis_snapshot(case_id: str, payload: dict[str, Any]) -> None:
-    path = analysis_snapshot_path(case_id)
-    path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+    analysis_snapshot_path(case_id).write_text(
+        json.dumps(payload, indent=2, default=str), encoding="utf-8"
+    )
 
 
 def build_snapshot(
@@ -79,16 +79,15 @@ def run_case_analysis(
     evidence_ids: Optional[list[str]] = None,
     progress_cb=None,
 ) -> dict[str, Any]:
-    """Analyze selected (or all) preserved evidence for a case."""
+    """Re-run the same pipeline as desktop offline analysis for preserved artifacts."""
     settings = get_settings()
     query = db.query(EvidenceArtifact).filter(EvidenceArtifact.case_id == case_id)
     if evidence_ids:
         query = query.filter(EvidenceArtifact.id.in_(evidence_ids))
     artifacts = query.order_by(EvidenceArtifact.collection_timestamp.asc()).all()
     if not artifacts:
-        raise ValueError("No evidence artifacts to analyze for this case")
+        raise ValueError("No saved records to analyze for this case. Import evidence first.")
 
-    # Remove prior events for selected evidence so re-analyze is idempotent
     selected_ids = [a.id for a in artifacts]
     db.query(ForensicEvent).filter(ForensicEvent.evidence_id.in_(selected_ids)).delete(
         synchronize_session=False
@@ -96,12 +95,9 @@ def run_case_analysis(
     db.commit()
 
     graph = graph_for_case(case_id)
-    # Fresh graph for this analysis pass
     graph.graph.clear()
     graph.save()
 
-    all_suspicious: list[dict] = []
-    all_incidents: list[dict] = []
     all_relationships: list[dict] = []
     classification_counts = {
         "USER_ACTIVITY": 0,
@@ -127,22 +123,16 @@ def run_case_analysis(
             raise RuntimeError(result.error_message)
         events_stored += result.events_stored
         all_relationships.extend(result.relationships)
-        all_suspicious.extend(result.suspicious_activities)
-        all_incidents.extend(result.incidents)
-        for key, value in result.classification_counts.items():
-            classification_counts[key] = classification_counts.get(key, 0) + value
 
-    # Final pass on full graph for coherent findings
     if progress_cb:
         progress_cb("Finalizing findings across case graph...")
-    from core.services.suspicious import detect_suspicious_activity
     from core.services.reconstruction import reconstruct_incidents
+    from core.services.suspicious import detect_suspicious_activity
 
     snapshot_graph = graph.graph.copy()
     all_suspicious = detect_suspicious_activity(snapshot_graph)
     all_incidents = reconstruct_incidents(snapshot_graph, all_suspicious)
 
-    # Reclassify all case events against final graph
     events = (
         db.query(ForensicEvent)
         .filter(ForensicEvent.case_id == case_id)

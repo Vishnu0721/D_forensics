@@ -1,10 +1,14 @@
 openapi: 3.1.0
 info:
   title: Digital Forensics Web API
-  version: 0.1.0-draft
+  version: 0.1.0-a
   description: |
-    Contract draft for Phase 1+. Phase 0 implements only /health and /api/v1/meta.
-    MVP is offline / import-first. Live agent endpoints are reserved and disabled.
+    Phase A implements only `/health` and `/api/v1/meta`.
+
+    Paths under "Draft (not implemented)" are a contract sketch for later phases.
+    Do not treat them as live until their phase ships.
+
+    Data: `web_data/` only. Never desktop `forensics.db` / `data/`.
 servers:
   - url: http://127.0.0.1:8000
     description: Local development
@@ -13,22 +17,33 @@ tags:
   - name: health
   - name: meta
   - name: cases
+    description: Draft — not implemented in Phase A
   - name: evidence
+    description: Draft — not implemented in Phase A
   - name: jobs
+    description: Draft — not implemented in Phase A
   - name: events
+    description: Draft — not implemented in Phase A
   - name: findings
+    description: Draft — not implemented in Phase A
   - name: graph
+    description: Draft — not implemented in Phase A
   - name: integrity
+    description: Draft — not implemented in Phase A
+  - name: export
+    description: Draft — not implemented in Phase A
+  - name: live
+    description: Draft — not implemented in Phase A
 
 paths:
   /health:
     get:
       tags: [health]
-      summary: Liveness / readiness
+      summary: Liveness
       operationId: getHealth
       responses:
         "200":
-          description: Service is up
+          description: Service is up (Phase A)
           content:
             application/json:
               schema:
@@ -37,251 +52,102 @@ paths:
   /api/v1/meta:
     get:
       tags: [meta]
-      summary: Product meta, nav, feature flags
+      summary: Product IA, glossary, feature flags
       operationId: getMeta
       responses:
         "200":
-          description: Product configuration for the UI
+          description: Clarity contract for the UI
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/MetaResponse"
 
+  # --- Draft (not implemented in Phase A) ---
+
   /api/v1/cases:
     get:
       tags: [cases]
-      summary: List investigation cases
+      summary: "[Draft] List cases"
       operationId: listCases
       responses:
-        "200":
-          description: Case list
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  items:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/CaseSummary"
+        "501":
+          description: Not implemented in Phase A
     post:
       tags: [cases]
-      summary: Create a case
+      summary: "[Draft] Create case"
       operationId: createCase
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CaseCreate"
       responses:
-        "201":
-          description: Created
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CaseSummary"
+        "501":
+          description: Not implemented in Phase A
 
   /api/v1/cases/{case_id}:
     get:
       tags: [cases]
-      summary: Get case detail / overview stats
+      summary: "[Draft] Get case"
       operationId: getCase
       parameters:
         - $ref: "#/components/parameters/CaseId"
       responses:
-        "200":
-          description: Case overview
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CaseDetail"
-    patch:
-      tags: [cases]
-      summary: Rename or update case metadata
-      operationId: updateCase
-      parameters:
-        - $ref: "#/components/parameters/CaseId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CaseUpdate"
-      responses:
-        "200":
-          description: Updated case
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CaseSummary"
+        "501":
+          description: Not implemented in Phase A
 
   /api/v1/cases/{case_id}/evidence:
     get:
       tags: [evidence]
-      summary: List evidence artifacts for a case
+      summary: "[Draft] List evidence"
       operationId: listEvidence
       parameters:
         - $ref: "#/components/parameters/CaseId"
       responses:
-        "200":
-          description: Evidence list
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  items:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/EvidenceSummary"
+        "501":
+          description: Not implemented in Phase A
     post:
       tags: [evidence]
-      summary: Upload / import preserved evidence
+      summary: "[Draft] Upload evidence"
       operationId: uploadEvidence
       parameters:
         - $ref: "#/components/parameters/CaseId"
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              required: [file]
-              properties:
-                file:
-                  type: string
-                  format: binary
-                source_hint:
-                  type: string
-                  description: Optional hint (json, csv, sysmon, log)
       responses:
-        "201":
-          description: Evidence preserved and hashed
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EvidenceSummary"
+        "501":
+          description: Not implemented in Phase A
 
   /api/v1/cases/{case_id}/analyze:
     post:
       tags: [jobs]
-      summary: Start offline analysis job for a case
+      summary: "[Draft] Start analysis job"
       operationId: startAnalysis
       parameters:
         - $ref: "#/components/parameters/CaseId"
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                evidence_ids:
-                  type: array
-                  items:
-                    type: string
-                    format: uuid
-                  description: If omitted, analyze all case evidence
       responses:
-        "202":
-          description: Job accepted
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/JobStatus"
-
-  /api/v1/jobs/{job_id}:
-    get:
-      tags: [jobs]
-      summary: Poll analysis job status
-      operationId: getJob
-      parameters:
-        - name: job_id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        "200":
-          description: Job status
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/JobStatus"
+        "501":
+          description: Not implemented in Phase A
 
   /api/v1/cases/{case_id}/events:
     get:
       tags: [events]
-      summary: Paged timeline events (plain-language DTOs)
+      summary: "[Draft] Timeline events"
       operationId: listEvents
       parameters:
         - $ref: "#/components/parameters/CaseId"
-        - name: filter
-          in: query
-          schema:
-            type: string
-            enum: [all, user, findings, linked, unclear]
-            default: all
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            default: 50
-            maximum: 200
-        - name: offset
-          in: query
-          schema:
-            type: integer
-            default: 0
       responses:
-        "200":
-          description: Event page
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EventPage"
-
-  /api/v1/cases/{case_id}/events/{event_id}:
-    get:
-      tags: [events]
-      summary: Event detail (plain + technical)
-      operationId: getEvent
-      parameters:
-        - $ref: "#/components/parameters/CaseId"
-        - name: event_id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        "200":
-          description: Event detail
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/EventDetail"
+        "501":
+          description: Not implemented in Phase A
 
   /api/v1/cases/{case_id}/findings:
     get:
       tags: [findings]
-      summary: Unified findings (suspicious + activity stories)
+      summary: "[Draft] Findings + activity stories"
       operationId: listFindings
       parameters:
         - $ref: "#/components/parameters/CaseId"
       responses:
-        "200":
-          description: Findings and stories
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FindingsResponse"
+        "501":
+          description: Not implemented in Phase A
 
   /api/v1/cases/{case_id}/graph:
     get:
       tags: [graph]
-      summary: Evidence graph JSON for Connections UI
+      summary: "[Draft] Connections graph JSON"
       operationId: getGraph
       parameters:
         - $ref: "#/components/parameters/CaseId"
@@ -292,40 +158,39 @@ paths:
             enum: [simple, detailed]
             default: simple
       responses:
-        "200":
-          description: Graph payload
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GraphResponse"
+        "501":
+          description: Not implemented in Phase A
 
   /api/v1/cases/{case_id}/integrity:
     get:
       tags: [integrity]
-      summary: Integrity table for preserved artifacts
+      summary: "[Draft] Integrity rows"
       operationId: listIntegrity
       parameters:
         - $ref: "#/components/parameters/CaseId"
       responses:
-        "200":
-          description: Integrity rows
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/IntegrityResponse"
-    post:
-      tags: [integrity]
-      summary: Re-verify hashes for case evidence
-      operationId: verifyIntegrity
+        "501":
+          description: Not implemented in Phase A
+
+  /api/v1/cases/{case_id}/export:
+    get:
+      tags: [export]
+      summary: "[Draft] Export report"
+      operationId: exportCase
       parameters:
         - $ref: "#/components/parameters/CaseId"
       responses:
-        "200":
-          description: Updated integrity rows
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/IntegrityResponse"
+        "501":
+          description: Not implemented in Phase A
+
+  /api/v1/live/status:
+    get:
+      tags: [live]
+      summary: "[Draft] Live watch status"
+      operationId: liveStatus
+      responses:
+        "501":
+          description: Not implemented in Phase A
 
 components:
   parameters:
@@ -335,299 +200,94 @@ components:
       required: true
       schema:
         type: string
-        format: uuid
 
   schemas:
     HealthResponse:
       type: object
+      required: [status, phase, version, features]
       properties:
         status:
           type: string
           example: ok
         phase:
-          type: integer
-          example: 0
+          type: string
+          example: A
+        version:
+          type: string
+          example: 0.1.0-a
         data_root:
           type: string
         database_url:
           type: string
+          description: Planned SQLite URL — file not created in Phase A
+        features:
+          type: object
+          additionalProperties:
+            type: boolean
 
     MetaResponse:
       type: object
+      required: [phase, version, product_name, nav, glossary, features, principles]
       properties:
+        phase:
+          type: string
+          example: A
+        version:
+          type: string
         product_name:
           type: string
-        tagline:
+        theme_default:
           type: string
-        theme:
+          example: light
+        theme_accent:
           type: string
-          enum: [light]
-        mvp:
+          example: white_blue
+        mvp_focus:
           type: string
-        live_agent:
-          type: boolean
-        auth_required:
-          type: boolean
-        navigation:
+          example: import_first
+        data_isolation:
+          type: string
+          example: web_data_only
+        principles:
+          type: array
+          items:
+            type: string
+        nav:
           type: object
-        renames:
-          type: object
-        phases:
-          type: object
-
-    CaseCreate:
-      type: object
-      required: [name]
-      properties:
-        name:
-          type: string
-        description:
-          type: string
-
-    CaseUpdate:
-      type: object
-      properties:
-        name:
-          type: string
-        description:
-          type: string
-
-    CaseSummary:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        name:
-          type: string
-        description:
-          type: string
-        mode:
-          type: string
-          enum: [imported, live]
-          description: live reserved for Phase 6
-        created_at:
-          type: string
-          format: date-time
-        evidence_count:
-          type: integer
-        event_count:
-          type: integer
-
-    CaseDetail:
-      allOf:
-        - $ref: "#/components/schemas/CaseSummary"
-        - type: object
           properties:
-            last_analysis_at:
-              type: string
-              format: date-time
-              nullable: true
-            top_findings:
+            primary:
               type: array
               items:
-                $ref: "#/components/schemas/FindingSummary"
-
-    EvidenceSummary:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        filename:
-          type: string
-        source_type:
-          type: string
-        sha256_hash:
-          type: string
-        file_size:
-          type: integer
-        integrity_status:
-          $ref: "#/components/schemas/IntegrityStatus"
-        created_at:
-          type: string
-          format: date-time
-
-    JobStatus:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        case_id:
-          type: string
-          format: uuid
-        status:
-          type: string
-          enum: [queued, running, completed, failed]
-        progress:
-          type: number
-          minimum: 0
-          maximum: 1
+                $ref: "#/components/schemas/NavItem"
+            secondary:
+              type: array
+              items:
+                $ref: "#/components/schemas/NavItem"
+        glossary:
+          type: array
+          items:
+            type: object
+            properties:
+              avoid:
+                type: string
+              prefer:
+                type: string
+        features:
+          type: object
+          additionalProperties:
+            type: boolean
         message:
           type: string
-        error:
-          type: string
-          nullable: true
 
-    PlainLanguage:
-      type: object
-      properties:
-        headline:
-          type: string
-        detail:
-          type: string
-        severity_label:
-          type: string
-          description: e.g. Informational, Review recommended
-
-    EventSummary:
-      allOf:
-        - $ref: "#/components/schemas/PlainLanguage"
-        - type: object
-          properties:
-            id:
-              type: string
-              format: uuid
-            timestamp:
-              type: string
-              format: date-time
-            source_type:
-              type: string
-            event_type:
-              type: string
-            classification:
-              type: string
-
-    EventDetail:
-      allOf:
-        - $ref: "#/components/schemas/EventSummary"
-        - type: object
-          properties:
-            technical:
-              type: object
-              additionalProperties: true
-            evidence_id:
-              type: string
-              format: uuid
-              nullable: true
-
-    EventPage:
-      type: object
-      properties:
-        total:
-          type: integer
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/EventSummary"
-
-    FindingSummary:
-      allOf:
-        - $ref: "#/components/schemas/PlainLanguage"
-        - type: object
-          properties:
-            id:
-              type: string
-            kind:
-              type: string
-              enum: [rule, story]
-            related_event_ids:
-              type: array
-              items:
-                type: string
-                format: uuid
-
-    FindingsResponse:
-      type: object
-      properties:
-        findings:
-          type: array
-          items:
-            $ref: "#/components/schemas/FindingSummary"
-        stories:
-          type: array
-          items:
-            $ref: "#/components/schemas/FindingSummary"
-
-    GraphNode:
+    NavItem:
       type: object
       properties:
         id:
           type: string
         label:
           type: string
-        kind:
+        path:
           type: string
-          enum: [process, file, ip, user, device, other]
-        story:
+        job:
           type: string
-
-    GraphEdge:
-      type: object
-      properties:
-        id:
-          type: string
-        source:
-          type: string
-        target:
-          type: string
-        relationship:
-          type: string
-        confidence:
-          type: number
-
-    GraphResponse:
-      type: object
-      properties:
-        view:
-          type: string
-          enum: [simple, detailed]
-        nodes:
-          type: array
-          items:
-            $ref: "#/components/schemas/GraphNode"
-        edges:
-          type: array
-          items:
-            $ref: "#/components/schemas/GraphEdge"
-
-    IntegrityStatus:
-      type: string
-      enum: [VALID, MODIFIED, UNVERIFIABLE, PENDING]
-      description: |
-        UI labels (light theme):
-        VALID → Unchanged
-        MODIFIED → Changed on disk
-        UNVERIFIABLE → File missing
-        PENDING → Not checked yet
-
-    IntegrityRow:
-      type: object
-      properties:
-        evidence_id:
-          type: string
-          format: uuid
-        what:
-          type: string
-        sha256_hash:
-          type: string
-        status:
-          $ref: "#/components/schemas/IntegrityStatus"
-        status_label:
-          type: string
-        collected_at:
-          type: string
-          format: date-time
-
-    IntegrityResponse:
-      type: object
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/IntegrityRow"
-        legend:
-          type: object
-          additionalProperties:
-            type: string
+          description: One-sentence purpose of this screen

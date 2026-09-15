@@ -1,4 +1,4 @@
-"""Evidence upload / list."""
+"""Evidence upload / list (Phase C)."""
 
 from __future__ import annotations
 
@@ -46,7 +46,6 @@ async def upload_evidence(
         shutil.copyfileobj(file.file, tmp)
 
     try:
-        # Keep original filename for investigator readability
         named = tmp_path.with_name(file.filename or tmp_path.name)
         if named != tmp_path:
             shutil.copy2(tmp_path, named)

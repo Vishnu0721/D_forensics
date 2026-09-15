@@ -1,21 +1,13 @@
 import { useEffect, useState } from "react";
-import { EventDetail, getEvent } from "../api";
+import { getEvent, type EventDetail } from "../api";
 
-const CLASS_LABELS: Record<string, string> = {
-  USER_ACTIVITY: "User action",
-  BACKGROUND_ACTIVITY: "Background noise",
-  SUSPICIOUS_ACTIVITY: "Needs attention",
-  CORRELATED_ACTIVITY: "Linked activity",
-  UNKNOWN: "Unclear",
-};
-
-type Props = {
+type EventDrawerProps = {
   caseId: string;
   eventId: string | null;
   onClose: () => void;
 };
 
-export function EventDrawer({ caseId, eventId, onClose }: Props) {
+export function EventDrawer({ caseId, eventId, onClose }: EventDrawerProps) {
   const [detail, setDetail] = useState<EventDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -29,16 +21,19 @@ export function EventDrawer({ caseId, eventId, onClose }: Props) {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    (async () => {
-      try {
-        const data = await getEvent(caseId, eventId);
+    getEvent(caseId, eventId)
+      .then((data) => {
         if (!cancelled) setDetail(data);
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
-      } finally {
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Could not load event");
+          setDetail(null);
+        }
+      })
+      .finally(() => {
         if (!cancelled) setLoading(false);
-      }
-    })();
+      });
     return () => {
       cancelled = true;
     };
@@ -46,60 +41,105 @@ export function EventDrawer({ caseId, eventId, onClose }: Props) {
 
   if (!eventId) return null;
 
+  const technicalEntries = detail
+    ? Object.entries(detail.technical).filter(
+        ([, v]) => v !== null && v !== undefined && v !== "",
+      )
+    : [];
+
   return (
-    <aside className="drawer" aria-label="Event details">
-      <div className="drawer__header">
-        <h2>What happened</h2>
-        <button type="button" className="btn btn--ghost drawer__close" onClick={onClose}>
-          Close
-        </button>
-      </div>
+    <div className="drawer-backdrop" onClick={onClose} role="presentation">
+      <aside
+        className="drawer"
+        role="dialog"
+        aria-label="Activity details"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="drawer__header">
+          <h2>Activity details</h2>
+          <button type="button" className="btn btn--ghost" onClick={onClose}>
+            Close
+          </button>
+        </div>
 
-      {loading && <p className="muted">Loading details…</p>}
-      {error && <p className="error">{error}</p>}
+        {loading && <p className="muted">Loading…</p>}
+        {error && <p className="status-err">{error}</p>}
 
-      {detail && !loading && (
-        <div className="drawer__body">
-          <p className="drawer__headline">{detail.headline}</p>
-          <p className="muted">{detail.detail}</p>
-          <div className="drawer__meta">
-            <span className="badge">{detail.severity_label}</span>
-            <span className="badge">
-              {CLASS_LABELS[detail.classification] || detail.classification}
-            </span>
-          </div>
-          <dl className="facts">
-            <div>
-              <dt>When</dt>
-              <dd>
-                {detail.timestamp
-                  ? new Date(detail.timestamp).toLocaleString()
-                  : "Unknown"}
-              </dd>
+        {detail && !loading && (
+          <div className="drawer__body">
+            <p className="drawer__headline">{detail.headline}</p>
+            {detail.detail && <p className="muted">{detail.detail}</p>}
+            <div className="drawer__meta">
+              <span className={`badge badge--${severityClass(detail.severity_label)}`}>
+                {detail.severity_label}
+              </span>
+              {detail.timestamp && (
+                <time dateTime={detail.timestamp}>
+                  {formatWhen(detail.timestamp)}
+                </time>
+              )}
             </div>
-            <div>
-              <dt>Type</dt>
-              <dd>
-                {detail.source_type} · {detail.event_type}
-              </dd>
-            </div>
-          </dl>
 
-          <details className="tech-details">
-            <summary>Technical details</summary>
-            <dl className="tech-grid">
-              {Object.entries(detail.technical)
-                .filter(([, v]) => v !== null && v !== undefined && v !== "")
-                .map(([key, value]) => (
+            <details className="tech-details">
+              <summary>Technical details</summary>
+              <dl className="tech-dl">
+                <div>
+                  <dt>Source</dt>
+                  <dd className="mono">{detail.source_type || "—"}</dd>
+                </div>
+                <div>
+                  <dt>Type</dt>
+                  <dd className="mono">{detail.event_type || "—"}</dd>
+                </div>
+                {detail.evidence_id && (
+                  <div>
+                    <dt>Record id</dt>
+                    <dd className="mono">{detail.evidence_id}</dd>
+                  </div>
+                )}
+                {technicalEntries.map(([key, value]) => (
                   <div key={key}>
                     <dt>{key}</dt>
-                    <dd className="mono">{String(value)}</dd>
+                    <dd className="mono">{formatTech(value)}</dd>
                   </div>
                 ))}
-            </dl>
-          </details>
-        </div>
-      )}
-    </aside>
+              </dl>
+            </details>
+          </div>
+        )}
+      </aside>
+    </div>
   );
+}
+
+function severityClass(label: string): string {
+  const lower = label.toLowerCase();
+  if (lower.includes("warn") || lower.includes("look") || lower.includes("suspicious")) {
+    return "warn";
+  }
+  if (lower.includes("danger") || lower.includes("critical") || lower.includes("high")) {
+    return "danger";
+  }
+  if (lower.includes("ok") || lower.includes("info") || lower.includes("informational")) {
+    return "ok";
+  }
+  return "neutral";
+}
+
+function formatWhen(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return iso;
+  }
+}
+
+function formatTech(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 }

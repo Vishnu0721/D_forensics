@@ -1,86 +1,73 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useOutletContext, useParams } from "react-router-dom";
 import {
-  CaseDetail,
-  EvidenceSummary,
-  LiveStatus,
   exportCaseUrl,
   getCase,
-  getLiveStatus,
-  listEvidence,
+  getCaseLiveStatus,
   pollJob,
   startAnalysis,
   startLive,
   stopLive,
+  type LiveStatus,
 } from "../api";
+import type { CaseOutletContext } from "../layouts/CaseLayout";
 
 export function CaseOverviewPage() {
-  const { caseId } = useParams();
-  const [detail, setDetail] = useState<CaseDetail | null>(null);
-  const [evidence, setEvidence] = useState<EvidenceSummary[]>([]);
+  const { caseId = "" } = useParams();
+  const { caseDetail, setCaseDetail } = useOutletContext<CaseOutletContext>();
   const [live, setLive] = useState<LiveStatus | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [liveBusy, setLiveBusy] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
   const [jobMessage, setJobMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    if (!caseId) return;
-    const [caseData, evidenceData, liveData] = await Promise.all([
+    const [detail, liveStatus] = await Promise.all([
       getCase(caseId),
-      listEvidence(caseId),
-      getLiveStatus(caseId),
+      getCaseLiveStatus(caseId),
     ]);
-    setDetail(caseData);
-    setEvidence(evidenceData.items);
-    setLive(liveData);
-  }, [caseId]);
+    setCaseDetail(detail);
+    setLive(liveStatus);
+  }, [caseId, setCaseDetail]);
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      try {
-        await refresh();
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
-      }
-    })();
+    refresh()
+      .then(() => {
+        if (!cancelled) setError(null);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Could not load case");
+        }
+      });
     return () => {
       cancelled = true;
     };
   }, [refresh]);
 
-  // Poll while this case is live so event counts stay fresh
-  useEffect(() => {
-    if (!live?.this_case_active) return;
-    const id = window.setInterval(() => {
-      void refresh().catch(() => undefined);
-    }, 4000);
-    return () => window.clearInterval(id);
-  }, [live?.this_case_active, refresh]);
-
-  async function onAnalyzeOnly() {
-    if (!caseId) return;
-    setBusy(true);
+  async function onAnalyze() {
+    setAnalyzing(true);
     setError(null);
+    setJobMessage("Starting analysis…");
     try {
       const job = await startAnalysis(caseId);
-      const done = await pollJob(job.id, (j) => setJobMessage(j.message));
-      if (done.status === "failed") {
-        throw new Error(done.error || "Analysis failed");
+      const final = await pollJob(job.id, {
+        onUpdate: (j) => setJobMessage(j.message || j.status),
+      });
+      if (final.status === "failed") {
+        setError(final.error || "Analysis failed");
+      } else {
+        setJobMessage("Analysis complete");
       }
-      setJobMessage("Analysis complete");
       await refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Analysis failed");
     } finally {
-      setBusy(false);
+      setAnalyzing(false);
     }
   }
 
   async function onLiveToggle() {
-    if (!caseId) return;
-    setLiveBusy(true);
     setError(null);
     try {
       if (live?.this_case_active) {
@@ -89,168 +76,167 @@ export function CaseOverviewPage() {
         await startLive(caseId);
       }
       await refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLiveBusy(false);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Live control failed");
     }
   }
 
-  if (!detail && !error) {
-    return <p className="muted">Loading case…</p>;
+  if (error && !caseDetail) {
+    return <p className="status-err">{error}</p>;
   }
 
-  if (error && !detail) {
-    return <p className="error">{error}</p>;
+  if (!caseDetail) {
+    return <p className="muted">Loading overview…</p>;
   }
 
-  if (!detail || !caseId) return null;
-
-  const liveActive = Boolean(live?.this_case_active);
+  const cards = [
+    { label: "Activity", value: caseDetail.event_count, hint: "Timeline events" },
+    {
+      label: "Needs a look",
+      value: caseDetail.finding_count,
+      hint: "Findings that need attention",
+    },
+    {
+      label: "Links",
+      value: caseDetail.relationship_count,
+      hint: "Connections between things",
+    },
+    {
+      label: "Saved records",
+      value: caseDetail.evidence_count,
+      hint: "Imported evidence files",
+    },
+  ];
 
   return (
-    <div className="overview">
-      <section className="panel">
-        <div className="overview__header">
-          <div>
-            <span className={`badge ${liveActive ? "badge--live" : ""}`}>
-              {liveActive ? "LIVE on this PC" : detail.mode === "live" ? "Live" : "Imported"}
-            </span>
-            <h1>{detail.name}</h1>
-            <p className="muted">{detail.description || "No description"}</p>
-          </div>
-        </div>
+    <div>
+      <h1>{caseDetail.name}</h1>
+      {caseDetail.description && <p className="lead">{caseDetail.description}</p>}
 
-        <div className="stat-row">
-          <div className="stat">
-            <span className="stat__value">{detail.evidence_count}</span>
-            <span className="stat__label">Evidence</span>
-          </div>
-          <div className="stat">
-            <span className="stat__value">{detail.event_count}</span>
-            <span className="stat__label">Events</span>
-          </div>
-          <div className="stat">
-            <span className="stat__value">{detail.relationship_count}</span>
-            <span className="stat__label">Links</span>
-          </div>
-          <div className="stat">
-            <span className="stat__value">{detail.finding_count}</span>
-            <span className="stat__label">Findings</span>
-          </div>
-        </div>
-
-        {detail.last_analysis_at && (
-          <p className="muted">
-            Last analysis: {new Date(detail.last_analysis_at).toLocaleString()}
-          </p>
-        )}
-
-        <div className="overview__cta">
-          <Link className="btn btn--primary" to={`/cases/${caseId}/import`}>
+      <section className="panel next-step">
+        <h2>What next?</h2>
+        <p>{caseDetail.next_step || "Open Import to add evidence, then Analyze."}</p>
+        <div className="btn-row">
+          <button
+            type="button"
+            className="btn btn--primary"
+            disabled={analyzing || caseDetail.evidence_count === 0}
+            onClick={() => void onAnalyze()}
+          >
+            {analyzing ? "Analyzing…" : "Analyze"}
+          </button>
+          <Link className="btn btn--ghost" to={`/cases/${caseId}/import`}>
             Import evidence
           </Link>
-          <Link className="btn btn--ghost" to={`/cases/${caseId}/timeline`}>
-            Open Timeline
-          </Link>
-          <Link className="btn btn--ghost" to={`/cases/${caseId}/findings`}>
-            Open Findings
-          </Link>
-          <a className="btn btn--ghost" href={exportCaseUrl(caseId, "markdown")}>
-            Export Markdown
-          </a>
-          <a className="btn btn--ghost" href={exportCaseUrl(caseId, "html")}>
-            Export HTML
-          </a>
         </div>
+        {jobMessage && analyzing && <p className="muted">{jobMessage}</p>}
+        {error && <p className="status-err">{error}</p>}
+      </section>
+
+      <section className="stat-grid" aria-label="Case summary">
+        {cards.map((c) => (
+          <div key={c.label} className="stat-card">
+            <p className="stat-card__value">{c.value}</p>
+            <p className="stat-card__label">{c.label}</p>
+            <p className="stat-card__hint muted">{c.hint}</p>
+          </div>
+        ))}
       </section>
 
       <section className="panel">
-        <h2>Live monitoring (this PC)</h2>
-        <p className="muted">
-          Optional Phase 6 agent: process + network collectors write into{" "}
-          <code>web_data/</code> only — not the desktop database. Authorized use only.
-        </p>
-        <div className="overview__cta">
-          <button
-            type="button"
-            className={liveActive ? "btn btn--ghost" : "btn btn--primary"}
-            disabled={liveBusy}
-            onClick={onLiveToggle}
-          >
-            {liveBusy
-              ? "Working…"
-              : liveActive
-                ? "Stop live monitoring"
-                : "Start live monitoring"}
-          </button>
-        </div>
-        {live && (
-          <p className="muted">
-            Status: {live.running ? "running" : "stopped"}
-            {live.this_case_active ? ` · captured ${live.events_captured} events this session` : ""}
-            {live.last_error ? ` · note: ${live.last_error}` : ""}
-          </p>
-        )}
-      </section>
-
-      <section className="panel">
-        <h2>Evidence in this case</h2>
-        <p className="muted">
-          Preserved hashed copies under web_data. Stop live monitoring before re-analysis.
-        </p>
-        {evidence.length > 0 && (
-          <button
-            className="btn btn--ghost"
-            type="button"
-            disabled={busy || liveActive}
-            onClick={onAnalyzeOnly}
-          >
-            {busy ? "Re-analyzing…" : "Re-analyze case"}
-          </button>
-        )}
-        {jobMessage && <p className="muted">{jobMessage}</p>}
-        {error && <p className="error">{error}</p>}
-
-        {evidence.length === 0 ? (
-          <div className="empty">
-            <p>No evidence yet.</p>
-            <p className="muted">Import a file or start live monitoring to capture activity.</p>
-            <Link className="btn btn--primary" to={`/cases/${caseId}/import`}>
-              Start import wizard
+        <h2>Top findings</h2>
+        {caseDetail.top_findings.length === 0 ? (
+          <div className="empty-inline">
+            <p className="muted">Nothing flagged yet. Import evidence and run Analyze.</p>
+            <Link className="btn btn--ghost" to={`/cases/${caseId}/import`}>
+              Import evidence
             </Link>
           </div>
         ) : (
-          <ul className="evidence-list">
-            {evidence.map((item) => (
-              <li key={item.id}>
-                <strong>{item.filename}</strong>
-                <span className="muted">
-                  {item.status_label} · {item.source_type} · {item.sha256_hash.slice(0, 12)}…
+          <ul className="finding-list">
+            {caseDetail.top_findings.map((f) => (
+              <li key={f.id} className="finding-item">
+                <span className={`badge badge--${sev(f.severity_label)}`}>
+                  {f.severity_label}
                 </span>
+                <div>
+                  <strong>{f.headline}</strong>
+                  {f.detail && <p className="muted">{f.detail}</p>}
+                </div>
               </li>
             ))}
           </ul>
         )}
+        {caseDetail.finding_count + caseDetail.story_count > 0 && (
+          <Link className="text-link" to={`/cases/${caseId}/findings`}>
+            See all findings
+          </Link>
+        )}
       </section>
 
-      {detail.top_findings.length > 0 && (
-        <section className="panel">
-          <div className="panel__row">
-            <h2>Top findings</h2>
-            <Link to={`/cases/${caseId}/findings`}>View all</Link>
-          </div>
-          <ul className="finding-list">
-            {detail.top_findings.map((f) => (
-              <li key={f.id}>
-                <strong>{f.headline}</strong>
-                <span className="badge">{f.severity_label}</span>
-                {f.detail && <p className="muted">{f.detail}</p>}
-              </li>
-            ))}
-          </ul>
-        </section>
+      <section className="panel">
+        <h2>Export</h2>
+        <p className="muted">Download a plain report of this investigation.</p>
+        <div className="btn-row">
+          <a className="btn btn--ghost" href={exportCaseUrl(caseId, "markdown")}>
+            Markdown
+          </a>
+          <a className="btn btn--ghost" href={exportCaseUrl(caseId, "html")}>
+            HTML
+          </a>
+        </div>
+      </section>
+
+      <section className="panel">
+        <h2>Live watch (this PC)</h2>
+        <p className="muted">
+          Optional: capture process and network activity while you work. Stop live
+          watch before Analyze.
+        </p>
+        {live && (
+          <p>
+            Status:{" "}
+            <strong>
+              {live.this_case_active
+                ? "Watching this case"
+                : live.running
+                  ? "Watching another case"
+                  : "Stopped"}
+            </strong>
+            {live.this_case_active
+              ? ` · ${live.events_captured} event${live.events_captured === 1 ? "" : "s"} captured`
+              : null}
+          </p>
+        )}
+        <button type="button" className="btn btn--ghost" onClick={() => void onLiveToggle()}>
+          {live?.this_case_active ? "Stop live watch" : "Start live watch"}
+        </button>
+      </section>
+
+      {caseDetail.last_analysis_at && (
+        <p className="muted page-foot">
+          Last analyzed {formatWhen(caseDetail.last_analysis_at)}
+        </p>
       )}
     </div>
   );
+}
+
+function sev(label: string): string {
+  const lower = label.toLowerCase();
+  if (lower.includes("warn") || lower.includes("look") || lower.includes("medium")) {
+    return "warn";
+  }
+  if (lower.includes("high") || lower.includes("critical") || lower.includes("danger")) {
+    return "danger";
+  }
+  return "ok";
+}
+
+function formatWhen(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return iso;
+  }
 }

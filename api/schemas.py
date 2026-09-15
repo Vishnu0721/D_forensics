@@ -43,6 +43,7 @@ class CaseDetail(CaseSummary):
     relationship_count: int = 0
     finding_count: int = 0
     story_count: int = 0
+    next_step: str = ""
 
 
 class EvidenceSummary(BaseModel):
@@ -129,3 +130,18 @@ class IntegrityRow(BaseModel):
 class IntegrityResponse(BaseModel):
     items: list[IntegrityRow]
     legend: dict[str, str]
+
+
+class DesktopBridgeScanItem(BaseModel):
+    case_folder: str
+    path: str
+    file_count: int
+
+
+class DesktopBridgeImportRequest(BaseModel):
+    """Import desktop evidence JSON/CSV into this web case (copies into web_data/)."""
+
+    source_dir: str = Field(
+        description="Absolute or repo-relative path to a desktop evidence folder "
+        "(typically data/evidence/<case_id>/ or .../preserved/)."
+    )

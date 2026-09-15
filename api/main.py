@@ -1,4 +1,4 @@
-"""FastAPI application entry."""
+"""FastAPI entry — Phases A–J."""
 
 from __future__ import annotations
 
@@ -7,11 +7,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api import __version__
+from api import __phase__, __version__
 from api.config import get_settings
 from api.db import init_web_db
 from api.routes import (
     analysis_jobs,
+    bridge,
     cases,
     evidence,
     events,
@@ -38,9 +39,9 @@ app = FastAPI(
     title=settings.app_name,
     version=__version__,
     description=(
-        "Light-theme investigation web API on feature/webapp. "
-        "Offline import + optional local live agent. "
-        "Uses web_data/ only — does not touch the desktop forensics.db."
+        f"Phase {__phase__}: light-theme investigation API. "
+        "Same forensic pipeline as the desktop app (core/). "
+        "Uses web_data/ only — does not touch desktop forensics.db."
     ),
     docs_url="/docs",
     redoc_url="/redoc",
@@ -66,3 +67,4 @@ app.include_router(graph.router)
 app.include_router(integrity.router)
 app.include_router(export.router)
 app.include_router(live.router)
+app.include_router(bridge.router)

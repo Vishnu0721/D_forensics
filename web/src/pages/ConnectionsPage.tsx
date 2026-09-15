@@ -1,72 +1,55 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Link, useParams } from "react-router-dom";
 import cytoscape, { type Core, type ElementDefinition } from "cytoscape";
-import { useParams } from "react-router-dom";
-import { getGraph, type GraphEdge, type GraphNode, type GraphView } from "../api";
-import { useTheme } from "../theme/ThemeProvider";
+import { getGraph, type GraphNode, type GraphResponse } from "../api";
 
-type LinkFilter = "all" | "network" | "execution" | "attention";
+type GraphFilter = "all" | "network" | "execution" | "findings";
 
-const LINK_FILTERS: { value: LinkFilter; label: string }[] = [
-  { value: "all", label: "All links" },
-  { value: "network", label: "Network only" },
-  { value: "execution", label: "Execution only" },
-  { value: "attention", label: "Needs attention" },
-];
-
-const KIND_COLOR: Record<string, string> = {
-  process: "var(--df-node-process)",
-  file: "var(--df-node-file)",
-  ip: "var(--df-node-ip)",
-  user: "var(--df-node-user)",
-  device: "var(--df-node-device)",
-  other: "var(--df-node-other)",
+const KIND_LABEL: Record<string, string> = {
+  process: "Program",
+  file: "File",
+  ip: "Internet",
+  user: "User",
+  device: "Device",
+  other: "Other",
 };
 
-function cssVar(name: string, fallback: string): string {
-  if (typeof window === "undefined") return fallback;
-  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return value || fallback;
-}
-
-function edgeMatches(edge: GraphEdge, filter: LinkFilter, attentionIds: Set<string>): boolean {
-  const rel = (edge.relationship || "").toUpperCase();
-  if (filter === "all") return true;
-  if (filter === "network") return rel.includes("CONNECT") || rel.includes("EXFIL");
-  if (filter === "execution") return rel.includes("EXECUT") || rel.includes("DOWNLOAD");
-  if (filter === "attention") {
-    return attentionIds.has(edge.source) || attentionIds.has(edge.target);
-  }
-  return true;
-}
+const KIND_COLOR: Record<string, string> = {
+  process: "#1a56db",
+  file: "#0f7a45",
+  ip: "#9a6400",
+  user: "#5a6f8a",
+  device: "#6b4fbb",
+  other: "#8aa0bf",
+};
 
 export function ConnectionsPage() {
-  const { caseId } = useParams();
-  const { theme } = useTheme();
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const { caseId = "" } = useParams();
+  const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
-
-  const [view, setView] = useState<GraphView>("simple");
-  const [linkFilter, setLinkFilter] = useState<LinkFilter>("all");
-  const [nodes, setNodes] = useState<GraphNode[]>([]);
-  const [edges, setEdges] = useState<GraphEdge[]>([]);
+  const [view, setView] = useState<"simple" | "detailed">("simple");
+  const [filter, setFilter] = useState<GraphFilter>("all");
+  const [graph, setGraph] = useState<GraphResponse | null>(null);
   const [selected, setSelected] = useState<GraphNode | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!caseId) return;
     let cancelled = false;
     setLoading(true);
-    setError(null);
-    setSelected(null);
     getGraph(caseId, view)
       .then((data) => {
-        if (cancelled) return;
-        setNodes(data.nodes);
-        setEdges(data.edges);
+        if (!cancelled) {
+          setGraph(data);
+          setSelected(null);
+          setError(null);
+        }
       })
-      .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Could not load connections");
+          setGraph(null);
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -76,39 +59,12 @@ export function ConnectionsPage() {
     };
   }, [caseId, view]);
 
-  const attentionIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const e of edges) {
-      const rel = (e.relationship || "").toUpperCase();
-      if (rel.includes("CONNECT") || rel.includes("EXFIL") || rel.includes("EXECUT")) {
-        ids.add(e.source);
-        ids.add(e.target);
-      }
-    }
-    return ids;
-  }, [edges]);
-
-  const filteredEdges = useMemo(
-    () => edges.filter((e) => edgeMatches(e, linkFilter, attentionIds)),
-    [edges, linkFilter, attentionIds],
-  );
-
-  const visibleNodeIds = useMemo(() => {
-    if (linkFilter === "all") return new Set(nodes.map((n) => n.id));
-    const ids = new Set<string>();
-    for (const e of filteredEdges) {
-      ids.add(e.source);
-      ids.add(e.target);
-    }
-    return ids;
-  }, [nodes, filteredEdges, linkFilter]);
-
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!containerRef.current || !graph) return;
 
-    const visibleNodes = nodes.filter((n) => visibleNodeIds.has(n.id));
+    const filtered = applyFilter(graph, filter);
     const elements: ElementDefinition[] = [
-      ...visibleNodes.map((n) => ({
+      ...filtered.nodes.map((n) => ({
         data: {
           id: n.id,
           label: n.label,
@@ -116,7 +72,7 @@ export function ConnectionsPage() {
           story: n.story,
         },
       })),
-      ...filteredEdges.map((e) => ({
+      ...filtered.edges.map((e) => ({
         data: {
           id: e.id,
           source: e.source,
@@ -139,72 +95,47 @@ export function ConnectionsPage() {
           selector: "node",
           style: {
             label: "data(label)",
-            "background-color": cssVar("--df-node-other", "#64748b"),
-            color: cssVar("--df-text", "#0f1f33"),
-            "font-size": "11px",
             "text-valign": "bottom",
             "text-margin-y": 6,
-            "text-wrap": "wrap",
-            "text-max-width": "90px",
+            "font-size": 11,
+            color: "#0f1f33",
+            "background-color": (ele) =>
+              KIND_COLOR[ele.data("kind") as string] ?? KIND_COLOR.other,
             width: 28,
             height: 28,
             "border-width": 2,
-            "border-color": cssVar("--df-surface", "#fff"),
+            "border-color": "#ffffff",
           },
-        },
-        {
-          selector: 'node[kind = "process"]',
-          style: { "background-color": cssVar("--df-node-process", "#1a56db") },
-        },
-        {
-          selector: 'node[kind = "file"]',
-          style: { "background-color": cssVar("--df-node-file", "#0f7a45") },
-        },
-        {
-          selector: 'node[kind = "ip"]',
-          style: { "background-color": cssVar("--df-node-ip", "#7c3aed") },
-        },
-        {
-          selector: 'node[kind = "user"]',
-          style: { "background-color": cssVar("--df-node-user", "#0e7490") },
-        },
-        {
-          selector: 'node[kind = "device"]',
-          style: { "background-color": cssVar("--df-node-device", "#b45309") },
         },
         {
           selector: "edge",
           style: {
-            width: 2,
-            "line-color": cssVar("--df-border-strong", "#8aa0bf"),
-            "target-arrow-color": cssVar("--df-border-strong", "#8aa0bf"),
+            width: 1.5,
+            "line-color": "#c5d4e8",
+            "target-arrow-color": "#c5d4e8",
             "target-arrow-shape": "triangle",
             "curve-style": "bezier",
             label: "data(label)",
-            "font-size": "9px",
-            color: cssVar("--df-text-muted", "#5a6f8a"),
+            "font-size": 9,
+            color: "#5a6f8a",
             "text-rotation": "autorotate",
-            "text-margin-y": -8,
           },
         },
         {
           selector: "node:selected",
           style: {
+            "border-color": "#1a56db",
             "border-width": 3,
-            "border-color": cssVar("--df-accent", "#1a56db"),
           },
         },
       ],
       layout: {
-        name: "cose",
+        name: filtered.nodes.length > 40 ? "concentric" : "cose",
         animate: false,
         padding: 24,
-        nodeRepulsion: () => 6000,
-        idealEdgeLength: () => 100,
-      },
+      } as cytoscape.LayoutOptions,
       userZoomingEnabled: true,
       userPanningEnabled: true,
-      boxSelectionEnabled: false,
     });
 
     cy.on("tap", "node", (evt) => {
@@ -213,10 +144,9 @@ export function ConnectionsPage() {
         id: d.id,
         label: d.label,
         kind: d.kind,
-        story: d.story || `${d.label} (${d.kind})`,
+        story: d.story || "",
       });
     });
-
     cy.on("tap", (evt) => {
       if (evt.target === cy) setSelected(null);
     });
@@ -226,98 +156,120 @@ export function ConnectionsPage() {
       cy.destroy();
       cyRef.current = null;
     };
-  }, [nodes, filteredEdges, visibleNodeIds, theme]);
+  }, [graph, filter]);
 
-  if (!caseId) return null;
+  const empty = graph && graph.nodes.length === 0;
 
   return (
     <div className="connections-page">
-      <section className="panel">
-        <header className="connections-header">
-          <div>
-            <h1>Connections</h1>
-            <p className="muted">
-              How programs, files, and network destinations relate. Blue = program, green = file,
-              purple = internet address.
-            </p>
-          </div>
-          <div className="view-toggle" role="group" aria-label="Graph detail">
-            <button
-              type="button"
-              className={view === "simple" ? "filter-chip filter-chip--active" : "filter-chip"}
-              onClick={() => setView("simple")}
-            >
-              Simple
-            </button>
-            <button
-              type="button"
-              className={view === "detailed" ? "filter-chip filter-chip--active" : "filter-chip"}
-              onClick={() => setView("detailed")}
-            >
-              Detailed
-            </button>
-          </div>
-        </header>
+      <h1>Connections</h1>
+      <p className="lead">Who and what is linked in this investigation.</p>
 
-        <div className="filter-bar" role="tablist" aria-label="Link filters">
-          {LINK_FILTERS.map((f) => (
+      <div className="toolbar">
+        <div className="btn-row">
+          <button
+            type="button"
+            className={view === "simple" ? "btn btn--primary" : "btn btn--ghost"}
+            onClick={() => setView("simple")}
+          >
+            Simple
+          </button>
+          <button
+            type="button"
+            className={view === "detailed" ? "btn btn--primary" : "btn btn--ghost"}
+            onClick={() => setView("detailed")}
+          >
+            Detailed
+          </button>
+        </div>
+        <div className="filter-bar">
+          {(
+            [
+              ["all", "All"],
+              ["network", "Network"],
+              ["execution", "Execution"],
+              ["findings", "Needs a look"],
+            ] as const
+          ).map(([id, label]) => (
             <button
-              key={f.value}
+              key={id}
               type="button"
-              role="tab"
-              aria-selected={linkFilter === f.value}
               className={
-                linkFilter === f.value ? "filter-chip filter-chip--active" : "filter-chip"
+                filter === id ? "filter-chip filter-chip--active" : "filter-chip"
               }
-              onClick={() => setLinkFilter(f.value)}
+              onClick={() => setFilter(id)}
             >
-              {f.label}
+              {label}
             </button>
           ))}
         </div>
+      </div>
 
-        {error && <p className="error">{error}</p>}
-        {loading && <p className="muted">Loading graph…</p>}
+      <ul className="graph-legend">
+        {Object.entries(KIND_LABEL).map(([kind, label]) => (
+          <li key={kind}>
+            <span
+              className="graph-legend__swatch"
+              style={{ background: KIND_COLOR[kind] }}
+            />
+            {label}
+          </li>
+        ))}
+      </ul>
 
-        {!loading && !error && nodes.length === 0 && (
-          <div className="empty">
-            <p>No connections yet.</p>
-            <p className="muted">Import and analyze evidence to build the relationship graph.</p>
-          </div>
-        )}
+      {loading && <p className="muted">Loading…</p>}
+      {error && <p className="status-err">{error}</p>}
 
-        <div className="graph-split">
-          <div className="graph-canvas-wrap">
-            <div ref={containerRef} className="graph-canvas" aria-label="Evidence graph" />
-          </div>
-          <aside className="graph-story panel panel--nested">
-            <h2>Node story</h2>
+      {empty && !loading && (
+        <section className="empty-state">
+          <h2>No links yet</h2>
+          <p className="muted">Run Analyze after importing evidence to build connections.</p>
+          <Link className="btn btn--primary" to={`/cases/${caseId}`}>
+            Back to overview
+          </Link>
+        </section>
+      )}
+
+      {!empty && !error && (
+        <div className="graph-layout">
+          <div ref={containerRef} className="graph-canvas" aria-label="Connections graph" />
+          <aside className="graph-story panel">
+            <h2>Story</h2>
             {selected ? (
               <>
-                <p className="drawer__headline">{selected.label}</p>
-                <span className="badge" style={{ background: "var(--df-accent-soft)" }}>
-                  {selected.kind}
-                </span>
-                <p className="muted" style={{ marginTop: "0.75rem" }}>
-                  {selected.story}
+                <p className="graph-story__label">
+                  <span
+                    className="graph-legend__swatch"
+                    style={{ background: KIND_COLOR[selected.kind] ?? KIND_COLOR.other }}
+                  />
+                  {KIND_LABEL[selected.kind] ?? selected.kind}: {selected.label}
                 </p>
-                <p className="muted hint">
-                  Color key:{" "}
-                  <span style={{ color: KIND_COLOR.process }}>process</span>,{" "}
-                  <span style={{ color: KIND_COLOR.file }}>file</span>,{" "}
-                  <span style={{ color: KIND_COLOR.ip }}>ip</span>
-                </p>
+                <p>{selected.story || "No story for this node yet."}</p>
               </>
             ) : (
-              <p className="muted">Click a node to read a short plain-language story.</p>
+              <p className="muted">Click a node to read its story.</p>
             )}
-            <p className="muted" style={{ marginTop: "1rem" }}>
-              Showing {filteredEdges.length} link{filteredEdges.length === 1 ? "" : "s"} ·{" "}
-              {visibleNodeIds.size} node{visibleNodeIds.size === 1 ? "" : "s"}
-            </p>
           </aside>
         </div>
-      </section>
+      )}
     </div>
   );
+}
+
+function applyFilter(graph: GraphResponse, filter: GraphFilter): GraphResponse {
+  if (filter === "all") return graph;
+
+  const keepNode = (n: GraphNode) => {
+    if (filter === "network") return n.kind === "ip" || /net|connect|ip/i.test(n.story);
+    if (filter === "execution") return n.kind === "process" || n.kind === "file";
+    if (filter === "findings") {
+      return /suspicious|look|warn|payload|unusual/i.test(`${n.label} ${n.story}`);
+    }
+    return true;
+  };
+
+  const nodes = graph.nodes.filter(keepNode);
+  const ids = new Set(nodes.map((n) => n.id));
+  const edges = graph.edges.filter((e) => ids.has(e.source) && ids.has(e.target));
+  return { ...graph, nodes, edges };
 }

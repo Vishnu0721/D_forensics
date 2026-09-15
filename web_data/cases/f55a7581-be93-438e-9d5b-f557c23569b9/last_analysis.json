@@ -1,0 +1,80 @@
+{
+  "case_id": "f55a7581-be93-438e-9d5b-f557c23569b9",
+  "analyzed_at": "2026-09-15T09:31:30.947656+00:00",
+  "evidence_ids": [
+    "d475b2f2-3a6c-4f4d-96c6-80f9cfabed27"
+  ],
+  "events_stored": 1,
+  "relationship_count": 1,
+  "classification_counts": {
+    "USER_ACTIVITY": 0,
+    "BACKGROUND_ACTIVITY": 0,
+    "SUSPICIOUS_ACTIVITY": 0,
+    "CORRELATED_ACTIVITY": 1,
+    "UNKNOWN": 0
+  },
+  "findings": [],
+  "stories": [
+    {
+      "id": "INC-001",
+      "kind": "story",
+      "headline": "INC-001",
+      "detail": "Step 1: Process 'localhost_32424_Cursor.exe'\n  -> CONNECTED_TO -> 100.30.51.230\nStep 2: IP '100.30.51.230'",
+      "severity_label": "Informational",
+      "related_event_ids": [
+        "d475b2f2-3a6c-4f4d-96c6-80f9cfabed27"
+      ]
+    }
+  ],
+  "raw_suspicious": [],
+  "raw_incidents": [
+    {
+      "incident_id": "INC-001",
+      "nodes": [
+        {
+          "id": "localhost_32424_Cursor.exe",
+          "type": "Process",
+          "label": "Cursor.exe",
+          "subtitle": "PID 32424",
+          "host": "localhost",
+          "pid": "32424",
+          "process": "Cursor.exe"
+        },
+        {
+          "id": "100.30.51.230",
+          "type": "IP",
+          "label": "100.30.51.230",
+          "subtitle": "Remote IP",
+          "ip": "100.30.51.230"
+        }
+      ],
+      "relationships": [
+        {
+          "source": "localhost_32424_Cursor.exe",
+          "target": "100.30.51.230",
+          "relationship_type": "CONNECTED_TO",
+          "confidence": 1.0,
+          "evidence_ids": [
+            "d475b2f2-3a6c-4f4d-96c6-80f9cfabed27"
+          ],
+          "reasons": [
+            "Process Cursor.exe (PID 32424) directly established connection to 100.30.51.230"
+          ]
+        }
+      ],
+      "suspicious_activities": [],
+      "status": "Normal",
+      "evidence_ids": [
+        "d475b2f2-3a6c-4f4d-96c6-80f9cfabed27"
+      ],
+      "timeline": "Step 1: Process 'localhost_32424_Cursor.exe'\n  -> CONNECTED_TO -> 100.30.51.230\nStep 2: IP '100.30.51.230'",
+      "start_time": "Available in Event Details",
+      "end_time": "Available in Event Details",
+      "reconstruction_reason": "Correlated activity chain discovered via deterministic rules."
+    }
+  ],
+  "event_classifications": {
+    "6466d9cc-569f-4bed-a86b-5f83ea62cff5": "CORRELATED_ACTIVITY"
+  },
+  "evidence_root": "D:\\D_forensics\\web_data\\evidence"
+}

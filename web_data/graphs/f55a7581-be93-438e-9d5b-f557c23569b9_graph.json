@@ -1,0 +1,38 @@
+{
+  "directed": true,
+  "multigraph": true,
+  "graph": {},
+  "nodes": [
+    {
+      "type": "Process",
+      "label": "Cursor.exe",
+      "subtitle": "PID 32424",
+      "host": "localhost",
+      "pid": "32424",
+      "process": "Cursor.exe",
+      "id": "localhost_32424_Cursor.exe"
+    },
+    {
+      "type": "IP",
+      "label": "100.30.51.230",
+      "subtitle": "Remote IP",
+      "ip": "100.30.51.230",
+      "id": "100.30.51.230"
+    }
+  ],
+  "links": [
+    {
+      "relationship_type": "CONNECTED_TO",
+      "confidence": 1.0,
+      "evidence_ids": [
+        "d475b2f2-3a6c-4f4d-96c6-80f9cfabed27"
+      ],
+      "reasons": [
+        "Process Cursor.exe (PID 32424) directly established connection to 100.30.51.230"
+      ],
+      "source": "localhost_32424_Cursor.exe",
+      "target": "100.30.51.230",
+      "key": "CONNECTED_TO"
+    }
+  ]
+}

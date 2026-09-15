@@ -6,6 +6,7 @@ import {
   listEvidence,
   pollJob,
   startAnalysis,
+  uploadEvidence,
   type DesktopBridgeScanItem,
   type EvidenceSummary,
 } from "../api";
@@ -74,6 +75,27 @@ export function ImportPage() {
     }
   }
 
+  async function onLoadSample() {
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await fetch("/sample_evidence.json");
+      if (!res.ok) throw new Error("Sample file not found in the web app.");
+      const blob = await res.blob();
+      const file = new File([blob], "sample_evidence.json", {
+        type: "application/json",
+      });
+      await uploadEvidence(caseId, file);
+      setMessage("Sample evidence loaded. Click Analyze when ready.");
+      await refresh();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Could not load sample");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function onAnalyze() {
     setAnalyzing(true);
     setError(null);
@@ -98,7 +120,26 @@ export function ImportPage() {
   return (
     <div>
       <h1>Import evidence</h1>
-      <p className="lead">Bring evidence files into this investigation.</p>
+      <p className="lead">
+        Bring evidence into this investigation — same idea as desktop Offline
+        Evidence, with clearer steps.
+      </p>
+
+      <section className="panel">
+        <h2>Try the sample</h2>
+        <p className="muted">
+          Demo story: login → PowerShell → temp payload → outbound connection
+          (mirrors a typical desktop offline import).
+        </p>
+        <button
+          type="button"
+          className="btn btn--ghost"
+          disabled={busy}
+          onClick={() => void onLoadSample()}
+        >
+          {busy ? "Loading…" : "Load sample evidence"}
+        </button>
+      </section>
 
       <section className="panel">
         <h2>Upload a file</h2>
@@ -113,10 +154,18 @@ export function ImportPage() {
       <section className="panel">
         <h2>From desktop capture</h2>
         <p className="muted">
-          Phase I bridge: copy files from a desktop evidence folder into this web
-          case (does not open the desktop database).
+          When to use this: you already captured activity in the{" "}
+          <strong>desktop</strong> app. Those files live under{" "}
+          <code>data/evidence/</code>. This copies them into{" "}
+          <code>web_data/</code> — it does <strong>not</strong> open the desktop
+          database.
         </p>
-        {bridgeItems.length > 0 && (
+        {bridgeItems.length === 0 ? (
+          <p className="muted">
+            No desktop folders found yet. Run <code>python main.py</code>, start
+            monitoring (or offline import), then refresh this page.
+          </p>
+        ) : (
           <ul className="bridge-list">
             {bridgeItems.map((item) => (
               <li key={item.path}>
@@ -160,6 +209,7 @@ export function ImportPage() {
             <p className="muted">No files imported yet.</p>
           </div>
         ) : (
+          <div className="table-wrap">
           <table className="table">
             <thead>
               <tr>
@@ -182,6 +232,7 @@ export function ImportPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
         <div className="btn-row" style={{ marginTop: "1rem" }}>
           <button
@@ -210,10 +261,10 @@ function formatSize(bytes: number): string {
 
 function statusBadge(label: string): string {
   const lower = label.toLowerCase();
-  if (lower.includes("intact") || lower.includes("ok") || lower.includes("valid")) {
+  if (lower.includes("unchanged") || lower.includes("ok") || lower.includes("valid")) {
     return "ok";
   }
-  if (lower.includes("fail") || lower.includes("mismatch") || lower.includes("tamper")) {
+  if (lower.includes("fail") || lower.includes("changed") || lower.includes("missing")) {
     return "danger";
   }
   if (lower.includes("pending") || lower.includes("unknown")) return "warn";

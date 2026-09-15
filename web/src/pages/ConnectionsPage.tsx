@@ -14,14 +14,24 @@ const KIND_LABEL: Record<string, string> = {
   other: "Other",
 };
 
-const KIND_COLOR: Record<string, string> = {
-  process: "#1a56db",
-  file: "#0f7a45",
-  ip: "#9a6400",
-  user: "#5a6f8a",
-  device: "#6b4fbb",
-  other: "#8aa0bf",
-};
+function themeColors(): Record<string, string> {
+  const s = getComputedStyle(document.documentElement);
+  const read = (name: string, fallback: string) =>
+    s.getPropertyValue(name).trim() || fallback;
+  return {
+    process: read("--df-node-process", "#1a56db"),
+    file: read("--df-node-file", "#0f7a45"),
+    ip: read("--df-node-ip", "#9a6400"),
+    user: read("--df-node-user", "#5a6f8a"),
+    device: read("--df-node-device", "#6b4fbb"),
+    other: read("--df-node-other", "#8aa0bf"),
+    text: read("--df-text", "#0f1f33"),
+    muted: read("--df-text-muted", "#5a6f8a"),
+    border: read("--df-border", "#c5d4e8"),
+    surface: read("--df-surface", "#ffffff"),
+    accent: read("--df-accent", "#1a56db"),
+  };
+}
 
 export function ConnectionsPage() {
   const { caseId = "" } = useParams();
@@ -87,6 +97,7 @@ export function ConnectionsPage() {
       cyRef.current = null;
     }
 
+    const colors = themeColors();
     const cy = cytoscape({
       container: containerRef.current,
       elements,
@@ -98,33 +109,33 @@ export function ConnectionsPage() {
             "text-valign": "bottom",
             "text-margin-y": 6,
             "font-size": 11,
-            color: "#0f1f33",
+            color: colors.text,
             "background-color": (ele) =>
-              KIND_COLOR[ele.data("kind") as string] ?? KIND_COLOR.other,
+              colors[ele.data("kind") as string] ?? colors.other,
             width: 28,
             height: 28,
             "border-width": 2,
-            "border-color": "#ffffff",
+            "border-color": colors.surface,
           },
         },
         {
           selector: "edge",
           style: {
             width: 1.5,
-            "line-color": "#c5d4e8",
-            "target-arrow-color": "#c5d4e8",
+            "line-color": colors.border,
+            "target-arrow-color": colors.border,
             "target-arrow-shape": "triangle",
             "curve-style": "bezier",
             label: "data(label)",
             "font-size": 9,
-            color: "#5a6f8a",
+            color: colors.muted,
             "text-rotation": "autorotate",
           },
         },
         {
           selector: "node:selected",
           style: {
-            "border-color": "#1a56db",
+            "border-color": colors.accent,
             "border-width": 3,
           },
         },
@@ -187,7 +198,7 @@ export function ConnectionsPage() {
             [
               ["all", "All"],
               ["network", "Network"],
-              ["execution", "Execution"],
+              ["execution", "Programs & files"],
               ["findings", "Needs a look"],
             ] as const
           ).map(([id, label]) => (
@@ -210,7 +221,7 @@ export function ConnectionsPage() {
           <li key={kind}>
             <span
               className="graph-legend__swatch"
-              style={{ background: KIND_COLOR[kind] }}
+              style={{ background: themeColors()[kind] ?? themeColors().other }}
             />
             {label}
           </li>
@@ -230,7 +241,7 @@ export function ConnectionsPage() {
         </section>
       )}
 
-      {!empty && !error && (
+      {!empty && !error && graph && (
         <div className="graph-layout">
           <div ref={containerRef} className="graph-canvas" aria-label="Connections graph" />
           <aside className="graph-story panel">
@@ -240,7 +251,10 @@ export function ConnectionsPage() {
                 <p className="graph-story__label">
                   <span
                     className="graph-legend__swatch"
-                    style={{ background: KIND_COLOR[selected.kind] ?? KIND_COLOR.other }}
+                    style={{
+                      background:
+                        themeColors()[selected.kind] ?? themeColors().other,
+                    }}
                   />
                   {KIND_LABEL[selected.kind] ?? selected.kind}: {selected.label}
                 </p>

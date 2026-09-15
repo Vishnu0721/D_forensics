@@ -13,7 +13,8 @@ There are **two UIs** that share the same analysis engine (`core/`):
 
 > **Testers (web):** start at **[web/README.md](web/README.md)**  
 > **API:** **[api/README.md](api/README.md)**  
-> **Web design decisions:** [docs/webapp/PHASE_A.md](docs/webapp/PHASE_A.md) · [docs/webapp/PHASE_B_J.md](docs/webapp/PHASE_B_J.md)
+> **Web design / publish polish:** [docs/webapp/PHASE_A.md](docs/webapp/PHASE_A.md) · [docs/webapp/PHASE_B_J.md](docs/webapp/PHASE_B_J.md) · [docs/webapp/PUBLISH.md](docs/webapp/PUBLISH.md)  
+> Desktop remains the primary PySide6 capture UI.
 
 ---
 
@@ -168,7 +169,7 @@ uvicorn api.main:app --reload --app-dir .
 
 Check:
 
-- http://127.0.0.1:8000/health → `"phase": "J"`
+- http://127.0.0.1:8000/health → `"phase": "P7"`, `"version": "0.3.0"`
 - http://127.0.0.1:8000/docs → interactive API docs
 
 ### Terminal 2 — UI
@@ -228,20 +229,13 @@ Remove-Item -Recurse -Force D:\D_forensics\web_data\evidence, D:\D_forensics\web
 
 Restart the API and refresh the browser.
 
-### Web phases (A–J)
+### Web phases (A–J + publish polish)
 
 | Phase | Focus | Status |
 |-------|--------|--------|
-| A | Foundations, IA, glossary, light tokens | Done |
-| B | Case shell & home | Done |
-| C | Import + analysis jobs | Done |
-| D | Timeline | Done |
-| E | Connections (graph) | Done |
-| F | Findings + Integrity | Done |
-| G | Overview + export | Done |
-| H | Optional live watch | Done |
-| I | Desktop evidence bridge | Done |
-| J | Hardening & smoke | Done |
+| A–J | Core investigation UI + API | Done |
+| P1–P7 | Publish polish (see [PUBLISH.md](docs/webapp/PUBLISH.md)) | Done |
+| UI | Responsive layout + card hover polish (see [web/README.md](web/README.md)) | Done |
 
 ---
 

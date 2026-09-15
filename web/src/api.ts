@@ -322,6 +322,32 @@ export async function stopLive(caseId: string): Promise<LiveStatus> {
   });
 }
 
+export async function deleteCase(caseId: string): Promise<void> {
+  await request<void>(`/api/v1/cases/${caseId}`, { method: "DELETE" });
+}
+
+export type MetaResponse = {
+  phase: string;
+  version: string;
+  product_name: string;
+  tagline: string;
+  license?: string;
+  message?: string;
+  features?: Record<string, boolean>;
+};
+
+export async function getMeta(): Promise<MetaResponse> {
+  return request<MetaResponse>("/api/v1/meta");
+}
+
+export async function getHealth(): Promise<{
+  status: string;
+  phase: string;
+  version: string;
+}> {
+  return request("/health");
+}
+
 export async function listDesktopBridge(): Promise<DesktopBridgeScanItem[]> {
   const data = await request<{ items: DesktopBridgeScanItem[] }>(
     "/api/v1/bridge/desktop",

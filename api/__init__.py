@@ -1,8 +1,10 @@
 """
 Web API package — FastAPI layer over shared `core/` services.
 
-Phases A–J: foundations through hardening. Desktop remains PySide6.
+Same forensic pipeline as the desktop PySide6 app; web data stays in web_data/.
 """
 
-__version__ = "0.2.0"
-__phase__ = "J"
+__version__ = "0.3.0"
+__phase__ = "P7"
+__product_name__ = "Digital Forensics"
+__tagline__ = "Import evidence. Analyze. Follow the story."

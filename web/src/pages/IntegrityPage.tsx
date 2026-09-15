@@ -5,6 +5,7 @@ import { listIntegrity, verifyIntegrity, type IntegrityResponse } from "../api";
 export function IntegrityPage() {
   const { caseId = "" } = useParams();
   const [data, setData] = useState<IntegrityResponse | null>(null);
+  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -15,6 +16,7 @@ export function IntegrityPage() {
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
     refresh()
       .then(() => {
         if (!cancelled) setError(null);
@@ -23,6 +25,9 @@ export function IntegrityPage() {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Could not load integrity");
         }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
@@ -51,13 +56,14 @@ export function IntegrityPage() {
         <button
           type="button"
           className="btn btn--primary"
-          disabled={busy}
+          disabled={busy || loading}
           onClick={() => void onVerify()}
         >
           {busy ? "Checking…" : "Verify now"}
         </button>
       </div>
 
+      {loading && !data && <p className="muted">Loading…</p>}
       {error && <p className="status-err">{error}</p>}
 
       {data && data.items.length === 0 && (
@@ -72,6 +78,7 @@ export function IntegrityPage() {
 
       {data && data.items.length > 0 && (
         <section className="panel">
+          <div className="table-wrap">
           <table className="table">
             <thead>
               <tr>
@@ -98,6 +105,7 @@ export function IntegrityPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </section>
       )}
 

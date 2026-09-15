@@ -8,6 +8,7 @@ from typing import Literal
 
 from sqlalchemy.orm import Session
 
+from api import __product_name__, __version__
 from api.plain_language import event_headline
 from api.services.analysis import load_analysis_snapshot
 from core.database.models import Case, EvidenceArtifact, ForensicEvent
@@ -39,9 +40,11 @@ def build_case_export(db: Session, case: Case, fmt: Literal["markdown", "html"] 
 
 def _as_markdown(case, generated, evidence, events, findings, stories, snapshot) -> str:
     lines = [
-        f"# Case report: {case.name}",
+        f"# Investigation report: {case.name}",
         "",
-        f"_Generated {generated}_",
+        f"**{__product_name__}** · v{__version__} · Generated {generated}",
+        "",
+        "_Authorized local use only. Same analysis pipeline as the desktop monitor._",
         "",
         case.description or "_No description_",
         "",
@@ -96,12 +99,17 @@ def _as_html(case, generated, evidence, events, findings, stories, snapshot) -> 
 
     parts = [
         "<!DOCTYPE html><html><head><meta charset='utf-8'/>",
-        f"<title>Case report: {esc(case.name)}</title>",
-        "<style>body{font-family:system-ui,sans-serif;max-width:960px;margin:2rem auto;padding:0 1rem;color:#0f1f33}"
-        "h1,h2{font-family:Georgia,serif}code{font-size:0.9em}.muted{color:#5a6f8a}</style>",
+        f"<title>Investigation report: {esc(case.name)}</title>",
+        "<style>body{font-family:system-ui,sans-serif;max-width:960px;margin:2rem auto;padding:0 1rem;color:#0f1f33;line-height:1.5}"
+        "h1,h2{font-family:Georgia,serif}code{font-size:0.9em}.muted{color:#5a6f8a}"
+        ".letterhead{border-bottom:2px solid #1a56db;padding-bottom:1rem;margin-bottom:1.5rem}"
+        ".letterhead .brand{color:#1a56db;font-weight:600;letter-spacing:0.02em}</style>",
         "</head><body>",
-        f"<h1>Case report: {esc(case.name)}</h1>",
-        f"<p class='muted'>Generated {esc(generated)}</p>",
+        "<header class='letterhead'>",
+        f"<p class='brand'>{esc(__product_name__)} <span class='muted'>v{esc(__version__)}</span></p>",
+        f"<h1>Investigation report: {esc(case.name)}</h1>",
+        f"<p class='muted'>Generated {esc(generated)} · Authorized local use only</p>",
+        "</header>",
         f"<p>{esc(case.description or 'No description')}</p>",
         "<h2>Summary</h2><ul>",
         f"<li>Saved records: <strong>{len(evidence)}</strong></li>",
@@ -136,6 +144,7 @@ def _as_html(case, generated, evidence, events, findings, stories, snapshot) -> 
             ts = ev.timestamp.isoformat() if ev.timestamp else "unknown"
             parts.append(f"<li><code>{esc(ts)}</code> — {esc(event_headline(ev))}</li>")
     parts.append(
-        "</ul><hr/><p class='muted'>Digital Forensics web export. Authorized use only.</p></body></html>"
+        f"</ul><hr/><p class='muted'>{esc(__product_name__)} export · same pipeline as the desktop app · "
+        "Authorized use only.</p></body></html>"
     )
     return "".join(parts)

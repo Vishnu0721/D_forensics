@@ -27,8 +27,9 @@ def main() -> None:
 
     h = client.get("/health")
     assert h.status_code == 200, h.text
-    assert h.json()["phase"] == "J", h.json()
-    print("OK health phase J")
+    assert h.json()["phase"] == "P7", h.json()
+    assert "database_url" not in h.json(), "health must not leak paths by default"
+    print("OK health phase P7 (paths hidden)")
 
     meta = client.get("/api/v1/meta")
     assert meta.status_code == 200
@@ -101,7 +102,7 @@ def main() -> None:
 
     md = client.get(f"/api/v1/cases/{case_id}/export?format=markdown")
     assert md.status_code == 200
-    assert "Case report" in md.text
+    assert "Investigation report" in md.text or "Case report" in md.text
     print("OK export markdown")
 
     bridge = client.get("/api/v1/bridge/desktop")
@@ -113,7 +114,13 @@ def main() -> None:
     assert "this_case_active" in live.json()
     print("OK live status")
 
-    print("OK phase B–J smoke")
+    deleted = client.delete(f"/api/v1/cases/{case_id}")
+    assert deleted.status_code == 204, deleted.text
+    gone = client.get(f"/api/v1/cases/{case_id}")
+    assert gone.status_code == 404
+    print("OK delete investigation")
+
+    print("OK phase B–J + publish polish smoke")
 
 
 if __name__ == "__main__":

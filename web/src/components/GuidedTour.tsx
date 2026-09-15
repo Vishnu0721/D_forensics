@@ -5,15 +5,15 @@ const TOUR_KEY = "df-guided-tour-dismissed";
 const STEPS = [
   {
     title: "Start with Import",
-    body: "Bring evidence files into a case first. Analysis runs after you have saved records.",
+    body: "Bring evidence into an investigation first (upload, sample, or desktop capture). Analyze after you have saved records.",
   },
   {
     title: "Overview tells you what’s next",
-    body: "Each case overview shows a plain next step — not a wall of counters.",
+    body: "Each investigation overview shows a plain next step — not a wall of counters like the dense desktop dashboard.",
   },
   {
     title: "Timeline and Connections",
-    body: "Timeline is the only activity list. Connections shows who and what is linked.",
+    body: "Timeline is the only activity list. Connections shows who and what is linked (desktop Evidence Graph).",
   },
 ] as const;
 

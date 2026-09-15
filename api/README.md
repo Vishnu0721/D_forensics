@@ -70,7 +70,7 @@ uvicorn api.main:app --reload --app-dir .
 
 | URL | Expect |
 |-----|--------|
-| http://127.0.0.1:8000/health | `"status": "ok"`, `"phase": "J"` |
+| http://127.0.0.1:8000/health | `"status": "ok"`, `"phase": "P7"`, `"version": "0.3.0"` (paths hidden by default) |
 | http://127.0.0.1:8000/docs | Swagger UI |
 | http://127.0.0.1:8000/api/v1/meta | Glossary, nav, feature flags |
 

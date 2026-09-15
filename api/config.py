@@ -24,8 +24,10 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "Digital Forensics Web API"
-    app_version: str = "0.1.0-a"
+    app_version: str = "0.3.0"
     debug: bool = False
+    # When True, /health includes local paths (for developers only)
+    expose_paths: bool = False
 
     # Isolated from desktop: forensics.db and data/
     data_root: Path = Field(default=REPO_ROOT / "web_data")

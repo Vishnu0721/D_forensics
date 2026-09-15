@@ -147,7 +147,10 @@ class EvidenceGraph:
 
     def save(self):
         """Persists the in-memory graph to disk (zero-cost DB alternative)."""
-        data = nx.node_link_data(self.graph)
+        try:
+            data = nx.node_link_data(self.graph, edges="links")
+        except TypeError:
+            data = nx.node_link_data(self.graph)
         with open(self.file_path, "w") as f:
             json.dump(data, f, indent=2)
 
@@ -157,6 +160,9 @@ class EvidenceGraph:
             try:
                 with open(self.file_path, "r") as f:
                     data = json.load(f)
-                    self.graph = nx.node_link_graph(data)
+                    try:
+                        self.graph = nx.node_link_graph(data, edges="links")
+                    except TypeError:
+                        self.graph = nx.node_link_graph(data)
             except Exception as e:
                 print(f"Failed to load graph: {e}")

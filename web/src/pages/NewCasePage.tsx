@@ -33,7 +33,7 @@ export function NewCasePage() {
   return (
     <div>
       <h1>New investigation</h1>
-      <p className="lead">Name the case, then import evidence.</p>
+      <p className="lead">Name this investigation, then import evidence.</p>
 
       <form className="panel form" onSubmit={(e) => void onSubmit(e)}>
         <label className="field">

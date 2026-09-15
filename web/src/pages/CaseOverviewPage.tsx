@@ -70,6 +70,12 @@ export function CaseOverviewPage() {
 
   async function onLiveToggle() {
     setError(null);
+    if (!live?.this_case_active) {
+      const ok = window.confirm(
+        "Start live watch on this PC?\n\nThis records process and network activity locally under web_data/ (same idea as the desktop Start Monitoring button). Stop before Analyze.",
+      );
+      if (!ok) return;
+    }
     setLiveBusy(true);
     try {
       if (live?.this_case_active) {

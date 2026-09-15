@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { PRODUCT_NAME } from "../product";
 
 type AppHeaderProps = {
   title?: string;
@@ -8,7 +9,7 @@ type AppHeaderProps = {
 };
 
 export function AppHeader({
-  title = "Digital Forensics",
+  title = PRODUCT_NAME,
   subtitle,
   backTo,
   backLabel = "All investigations",
@@ -17,6 +18,7 @@ export function AppHeader({
     <header className="header">
       <div className="header__left">
         <Link className="header__brand" to="/">
+          <span className="header__mark" aria-hidden />
           {title}
         </Link>
         {subtitle && <span className="header__case">{subtitle}</span>}

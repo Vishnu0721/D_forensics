@@ -1,16 +1,17 @@
-"""Case CRUD and overview (Phase B + G)."""
+"""Case CRUD and overview (plus delete for publish hygiene)."""
 
 from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 
 from api.db import get_db
 from api.schemas import CaseCreate, CaseDetail, CaseSummary, CaseUpdate, FindingSummary
 from api.serializers import case_summary, get_case_or_404, overview_next_step
 from api.services.analysis import load_analysis_snapshot
+from api.services.delete_case import delete_case_cascade
 from api.services.live_monitor import live_monitor
 from core.database.models import Case
 
@@ -87,3 +88,10 @@ def update_case(case_id: str, body: CaseUpdate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(case)
     return case_summary(db, case)
+
+
+@router.delete("/{case_id}", status_code=204)
+def delete_case(case_id: str, db: Session = Depends(get_db)):
+    get_case_or_404(db, case_id)
+    delete_case_cascade(db, case_id)
+    return Response(status_code=204)

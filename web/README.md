@@ -54,7 +54,7 @@ pip install -r api/requirements.txt
 uvicorn api.main:app --reload --app-dir .
 ```
 
-Confirm: http://127.0.0.1:8000/health → `"phase": "J"`
+Confirm: http://127.0.0.1:8000/health → `"phase": "P7"`
 
 ### Terminal 2 — UI
 
@@ -172,6 +172,15 @@ Restart API + refresh browser.
 - cytoscape (Connections page)
 
 Scripts: `npm run dev` · `npm run build` · `npm run preview`
+
+---
+
+## UI polish (responsive + interaction)
+
+- **Breakpoints:** ~960px (stat grid / graph stack), ~800px (collapsible investigation menu + stacked home rows), ~520px (single-column stats, full-width buttons)
+- **Cards:** panels, overview stats, investigation list cards, timeline rows, findings, and bridge items lift slightly and deepen shadow on hover (respects `prefers-reduced-motion`)
+- **Tables:** Integrity / Import wrap in `.table-wrap` so wide hash columns scroll horizontally on small screens
+- **Mobile nav:** Case shell shows **Investigation menu** toggle; menu closes on route change
 
 ---
 

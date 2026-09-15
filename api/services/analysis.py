@@ -108,58 +108,82 @@ def run_case_analysis(
     }
     events_stored = 0
 
-    for artifact in artifacts:
+    try:
+        for artifact in artifacts:
+            if progress_cb:
+                progress_cb(f"Analyzing {artifact.filename}...")
+            result = analyze_preserved_artifact(
+                db=db,
+                case_id=case_id,
+                evidence=artifact,
+                graph_db=graph,
+                actor="web_investigator",
+                progress_cb=progress_cb,
+            )
+            if not result.success and result.error_message:
+                raise RuntimeError(result.error_message)
+            events_stored += result.events_stored
+            all_relationships.extend(result.relationships)
+
         if progress_cb:
-            progress_cb(f"Analyzing {artifact.filename}...")
-        result = analyze_preserved_artifact(
-            db=db,
-            case_id=case_id,
-            evidence=artifact,
-            graph_db=graph,
-            actor="web_investigator",
-            progress_cb=progress_cb,
+            progress_cb("Finalizing findings across case graph...")
+        from core.services.reconstruction import reconstruct_incidents
+        from core.services.suspicious import detect_suspicious_activity
+
+        snapshot_graph = graph.graph.copy()
+        all_suspicious = detect_suspicious_activity(snapshot_graph)
+        all_incidents = reconstruct_incidents(snapshot_graph, all_suspicious)
+
+        events = (
+            db.query(ForensicEvent)
+            .filter(ForensicEvent.case_id == case_id)
+            .order_by(ForensicEvent.timestamp.asc())
+            .all()
         )
-        if not result.success and result.error_message:
-            raise RuntimeError(result.error_message)
-        events_stored += result.events_stored
-        all_relationships.extend(result.relationships)
+        cls_engine = ClassificationEngine()
+        classification_counts = {k: 0 for k in classification_counts}
+        event_classifications: dict[str, str] = {}
+        for ev in events:
+            r = cls_engine.classify_event(ev, snapshot_graph, all_suspicious)
+            cls = r["classification"]
+            event_classifications[ev.id] = cls
+            if cls in classification_counts:
+                classification_counts[cls] += 1
 
-    if progress_cb:
-        progress_cb("Finalizing findings across case graph...")
-    from core.services.reconstruction import reconstruct_incidents
-    from core.services.suspicious import detect_suspicious_activity
-
-    snapshot_graph = graph.graph.copy()
-    all_suspicious = detect_suspicious_activity(snapshot_graph)
-    all_incidents = reconstruct_incidents(snapshot_graph, all_suspicious)
-
-    events = (
-        db.query(ForensicEvent)
-        .filter(ForensicEvent.case_id == case_id)
-        .order_by(ForensicEvent.timestamp.asc())
-        .all()
-    )
-    cls_engine = ClassificationEngine()
-    classification_counts = {k: 0 for k in classification_counts}
-    event_classifications: dict[str, str] = {}
-    for ev in events:
-        r = cls_engine.classify_event(ev, snapshot_graph, all_suspicious)
-        cls = r["classification"]
-        event_classifications[ev.id] = cls
-        if cls in classification_counts:
-            classification_counts[cls] += 1
-
-    snapshot = build_snapshot(
-        case_id,
-        suspicious=all_suspicious,
-        incidents=all_incidents,
-        relationships=all_relationships,
-        classification_counts=classification_counts,
-        events_stored=events_stored,
-        evidence_ids=selected_ids,
-    )
-    snapshot["event_classifications"] = event_classifications
-    snapshot["evidence_root"] = str(settings.evidence_dir)
-    save_analysis_snapshot(case_id, snapshot)
-    graph.save()
-    return snapshot
+        snapshot = build_snapshot(
+            case_id,
+            suspicious=all_suspicious,
+            incidents=all_incidents,
+            relationships=all_relationships,
+            classification_counts=classification_counts,
+            events_stored=events_stored,
+            evidence_ids=selected_ids,
+        )
+        snapshot["event_classifications"] = event_classifications
+        snapshot["evidence_root"] = str(settings.evidence_dir)
+        save_analysis_snapshot(case_id, snapshot)
+        graph.save()
+        return snapshot
+    except Exception as exc:
+        # Avoid Timeline using stale event ids after a mid-run failure.
+        save_analysis_snapshot(
+            case_id,
+            {
+                "case_id": case_id,
+                "analyzed_at": datetime.now(timezone.utc).isoformat(),
+                "failed": True,
+                "error": str(exc),
+                "evidence_ids": selected_ids,
+                "events_stored": events_stored,
+                "relationship_count": len(all_relationships),
+                "classification_counts": classification_counts,
+                "findings": [],
+                "stories": [],
+                "event_classifications": {},
+            },
+        )
+        try:
+            graph.save()
+        except Exception:
+            pass
+        raise

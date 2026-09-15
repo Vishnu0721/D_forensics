@@ -35,6 +35,7 @@ class WebLiveMonitor:
         self._lock = threading.RLock()
         self._case_id: Optional[str] = None
         self._running = False
+        self._stopping = False
         self._threads: list[threading.Thread] = []
         self._started_at: Optional[str] = None
         self._events_captured = 0
@@ -57,6 +58,8 @@ class WebLiveMonitor:
 
     def start(self, case_id: str) -> dict[str, Any]:
         with self._lock:
+            if self._stopping:
+                raise LiveMonitorError("Live monitoring is still stopping. Try again in a moment.")
             if self._running:
                 if self._case_id == case_id:
                     return self.status()
@@ -81,12 +84,17 @@ class WebLiveMonitor:
 
     def stop(self) -> dict[str, Any]:
         with self._lock:
+            if self._stopping:
+                return self.status()
             case_id = self._case_id
             self._running = False
-        for t in list(self._threads):
+            self._stopping = True
+            threads = list(self._threads)
+            self._threads = []
+        for t in threads:
             t.join(timeout=3.0)
         with self._lock:
-            self._threads = []
+            self._stopping = False
             if case_id:
                 save_case_meta(
                     case_id,
@@ -237,10 +245,10 @@ class WebLiveMonitor:
                         if key in self._seen_conns:
                             continue
                         process_name = "Unavailable"
-                        pid = conn.pid or "Unavailable"
-                        if conn.pid:
+                        pid: Optional[int] = conn.pid if conn.pid else None
+                        if pid is not None:
                             try:
-                                process_name = psutil.Process(conn.pid).name()
+                                process_name = psutil.Process(pid).name()
                             except Exception:
                                 pass
                         self._persist(

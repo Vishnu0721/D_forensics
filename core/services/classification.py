@@ -23,7 +23,9 @@ class ClassificationEngine:
         Classifies a forensic event.
         Returns a dict: {"classification": "...", "reason": "...", "attribution": "..."}
         """
-        cache_key = f"{event.evidence_id}_{graph_version}"
+        # Per-event key (not evidence_id): one file can hold many events with different classes.
+        event_key = event.id or f"{event.evidence_id}:{event.timestamp}:{event.event_type}:{event.process}:{event.path}"
+        cache_key = f"{event_key}_{graph_version}"
         if cache_key in self._cache:
             return self._cache[cache_key]
 

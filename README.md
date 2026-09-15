@@ -1,257 +1,238 @@
 # Digital Forensics Monitoring and Correlation Platform
 
-A Python desktop application for **local** live forensic monitoring, evidence integrity, graph-based correlation, and offline evidence analysis.
+Local forensic monitoring and investigation toolkit for **authorized research / academic use**.
 
-It captures process, filesystem, and network activity **on this computer only** (not a remote agent), stores hashed evidence artifacts, correlates related events, and presents findings in plain language for investigation and research.
+It captures process, filesystem, and network activity **on this computer only**, stores hashed evidence, correlates related events, and presents findings in plain language.
 
-## What’s new (current desktop)
+There are **two UIs** that share the same analysis engine (`core/`):
 
-Clarity and stability improvements on top of the original pipeline:
+| UI | Role | Data location |
+|----|------|----------------|
+| **Desktop** (PySide6) | Live capture + offline analysis on one screen | `forensics.db`, `data/` |
+| **Web** (React + FastAPI) | Clear light-theme investigation (import-first) | `web_data/` only |
 
-- **Single Start / Stop button** with a clear **LIVE** or **STOPPED** banner and next-step guidance
-- **Plain-language activity stream** (e.g. “Chrome contacted GitHub”) instead of raw jargon
-- **Needs attention** and **Activity** tabs with readable filters and empty states
-- **Evidence Graph** with Simple/Detailed views, fit-to-view layout, friendly service names, and a short “story” on node click
-- **Incident Summary** as activity stories (Informational vs Review recommended)
-- **Evidence Integrity** tab with human labels (Unchanged / Changed on disk / File missing) and auto-verify on Stop
-- **Quick tour** (Help → Quick tour) for first-time users
-- Performance hardening: interruptible collectors, SQLite WAL, debounced graph updates, layout off the UI thread
+> **Testers (web):** start at **[web/README.md](web/README.md)**  
+> **API:** **[api/README.md](api/README.md)**  
+> **Web design decisions:** [docs/webapp/PHASE_A.md](docs/webapp/PHASE_A.md) · [docs/webapp/PHASE_B_J.md](docs/webapp/PHASE_B_J.md)
 
-> A **light-theme web app** lives on branch `feature/webapp` (`api/` + `web/`).  
-> Phases **A–J** are implemented — see **[docs/webapp/PHASE_A.md](docs/webapp/PHASE_A.md)** and **[docs/webapp/PHASE_B_J.md](docs/webapp/PHASE_B_J.md)**.  
-> Testers: **[web/README.md](web/README.md)**. Desktop remains the primary PySide6 UI.
+---
 
-## Overview
+## Architecture
 
-Forensic evidence pipeline:
-
-1. Collect raw telemetry from the local machine  
-2. Persist evidence artifacts to disk with deterministic SHA-256 hashing  
-3. Normalize events into a common schema  
-4. Correlate related events with rule-based logic  
-5. Build a relationship graph and reconstruct incidents  
-6. Classify activity and present findings in the desktop dashboard  
-
-**Stack:** Python 3.10+, PySide6 (GUI), SQLAlchemy (SQLite), NetworkX (graphs), psutil + watchdog (collectors).
-
-## Key Features
-
-### Live Monitoring
-- Process start/stop collection (`psutil`)
-- Filesystem watching on common user and system paths (`watchdog`), with noise filtering
-- Live network connection monitoring
-- Real-time evidence JSON on disk + database events
-- Clear LIVE/STOPPED status and collector feedback
-
-### Evidence Handling
-- One evidence artifact per captured event
-- SHA-256 fingerprint of the saved file
-- Traceability from event → evidence → integrity status
-- Verify Integrity (manual) and automatic check when monitoring stops
-
-### Analysis and Correlation
-- Normalization of process, filesystem, network (and offline) sources
-- Rule-based correlation into a multi-relationship graph
-- Suspicious pattern detection (“Needs attention”)
-- Incident reconstruction as connected activity stories
-- Event classification (user / background / correlated / etc.)
-
-### Offline Investigation
-- Import preserved evidence (JSON, CSV, logs, and related formats)
-- Offline parse → normalize → graph → incidents
-- Same dashboard views for imported cases
-
-### Desktop Interface
-- Monitor controls and status banner
-- Activity stream with plain-language filters
-- Needs attention list (severity in plain English)
-- Evidence Graph (Simple view by default)
-- Incident Summary and Event Details
-- Evidence Integrity tab with status legend
-- First-run quick tour
-
-## System Architecture
+### Shared forensic pipeline
 
 ```text
-Collectors (process / filesystem / network)
-        ↓
-Persistence (JSON on disk + SHA-256 + ForensicEvent)
-        ↓
-Correlation + EvidenceGraph (NetworkX)
-        ↓
-Suspicious rules + Incident reconstruction
-        ↓
-PySide6 GUI (plain-language presentation)
+ Collectors / Import
+         │
+         ▼
+ Persist evidence JSON + SHA-256
+         │
+         ▼
+ Normalize → ForensicEvent (SQLite)
+         │
+         ▼
+ Correlate → EvidenceGraph (NetworkX)
+         │
+         ▼
+ Suspicious rules → Incident / activity stories
+         │
+         ▼
+ Classify (user / background / needs a look / …)
+         │
+    ┌────┴────┐
+    ▼         ▼
+ Desktop    Web API + React UI
+ (PySide6)  (plain-language screens)
 ```
 
-Layers:
+### Desktop vs web (data isolation)
 
-- **Database** — cases, evidence, events, audit log (`forensics.db`, WAL mode)
-- **Monitoring** — local collectors + persistence worker
-- **Services** — normalization, correlation, graph, integrity, offline analysis
-- **GUI** — dashboard, graph view, language helpers
+```text
+ Desktop                         Web
+ ─────────                       ───
+ forensics.db                    web_data/forensics_web.db
+ data/evidence/                  web_data/evidence/
+ data/<case>_graph.json          web_data/graphs/
 
-## Project Structure
+        optional bridge (copy files only)
+ data/evidence/<folder>  ──copy──►  web case → Analyze
+```
+
+The web app **never opens** the desktop database. To reuse desktop captures, use **Import → From desktop capture** (copies into `web_data/`).
+
+### Repository layout
 
 ```text
 .
-├── core/
-│   ├── database/          # SQLAlchemy engine + models
-│   ├── monitoring/        # Live collectors + manager
-│   └── services/          # Correlation, graph, integrity, offline, …
-├── gui/
-│   ├── main_window.py     # Main dashboard
-│   ├── graph_view.py      # Interactive evidence graph
-│   ├── event_language.py  # Plain-language event text
-│   ├── incident_language.py
-│   ├── integrity_ui.py
-│   ├── quick_tour.py
-│   └── offline_analysis_window.py
-├── data/
-│   └── evidence/          # Runtime evidence (usually gitignored)
-├── evaluation/
-├── main.py
-├── requirements.txt
-└── README.md
+├── main.py                 # Desktop entry
+├── requirements.txt        # Desktop dependencies
+├── core/                   # Shared pipeline (DB models, collectors, analysis)
+│   ├── database/
+│   ├── monitoring/
+│   └── services/
+├── gui/                    # PySide6 desktop UI
+├── api/                    # FastAPI web backend
+├── web/                    # React + Vite web frontend
+├── web_data/               # Web runtime DB/evidence (gitignored contents)
+├── data/                   # Desktop runtime evidence (gitignored)
+├── docs/webapp/            # Web phase docs
+└── evaluation/             # Evaluation helpers
 ```
 
-## Requirements
+---
 
-Python **3.10+** recommended.
+## Prerequisites
 
-```bash
+| Tool | Needed for |
+|------|------------|
+| Python **3.10+** | Desktop + API |
+| Node.js **18+** (npm) | Web UI only |
+| Windows recommended | Live collectors (psutil / watchdog / pywin32) |
+
+### Get the code
+
+```powershell
+git clone https://github.com/Vishnu0721/D_forensics.git
+cd D_forensics
+git checkout feature/webapp
+```
+
+(Upstream academic fork may also exist as `Kamalika-k/digital_forensics`.)
+
+---
+
+## 1. Desktop app
+
+### Install
+
+```powershell
+cd D:\D_forensics
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
-### Main dependencies
+macOS / Linux:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### Run
+
+```powershell
+python main.py
+```
+
+### Manual test (desktop)
+
+1. **Help → Quick tour** (optional)
+2. Click **Start Monitoring** — banner shows LIVE
+3. Open a browser or save a file — check **Activity**
+4. Open **Evidence Graph** (Simple view) — click a node for a short story
+5. Check **Incident Summary** and **Needs attention**
+6. Click **Stop Monitoring** — integrity re-checks
+7. Optional: **Offline Evidence (Advanced)** to import a JSON/CSV/log
+
+### Desktop stack
 
 | Package | Role |
 |---------|------|
-| PySide6 | Desktop GUI |
-| SQLAlchemy | ORM / SQLite |
+| PySide6 | GUI |
+| SQLAlchemy | SQLite ORM |
 | networkx | Evidence graph |
-| psutil | Process & network telemetry |
+| psutil | Process & network |
 | watchdog | Filesystem events |
 | pandas / pydantic | Parsing & validation |
-| pywin32 | Windows helpers |
 
-`neo4j` is listed for optional future use; the current graph engine is **NetworkX**.
+Graph engine is **NetworkX** (not Neo4j).
 
-## Installation and Setup
+---
 
-```bash
-git clone https://github.com/Kamalika-k/digital_forensics.git
-cd digital_forensics
-python -m venv venv
-# Windows:
-venv\Scripts\activate
-# Linux/macOS:
-# source venv/bin/activate
-pip install -r requirements.txt
-python main.py
-```
+## 2. Web app (for other testers)
 
-## Running the Application
+Branch: `feature/webapp` (if you are not already on it: `git checkout feature/webapp`).
 
-```bash
-python main.py
-```
+You need **two terminals**. Keep both running while testing.
 
-Typical workflow:
-
-1. Click **Start Monitoring** (banner turns LIVE)  
-2. Open **Activity** — generate events by opening a browser or saving a file  
-3. Open **Evidence Graph** — red = program, blue = internet destination  
-4. Review **Incident Summary** and **Needs attention** if anything stands out  
-5. Click **Stop Monitoring** — evidence stays saved; integrity is re-checked  
-
-Optional: **Offline Evidence (Advanced)** to import preserved files.  
-**Help → Quick tour** for a 30-second walkthrough.
-
-## Evidence Workflow
-
-```text
-Collect raw events
-    ↓
-Persist artifact to disk
-    ↓
-Compute SHA-256 hash
-    ↓
-Normalize into forensic schema
-    ↓
-Store in SQLite
-    ↓
-Correlate and graph related events
-    ↓
-Classify / flag suspicious activity
-    ↓
-Reconstruct incident stories
-```
-
-Live evidence path: `data/evidence/<case_id>/<evidence_id>.json`  
-Graph cache: `data/<case_id>_graph.json`
-
-## Data Model
-
-| Table | Purpose |
-|-------|---------|
-| Case | Investigation container |
-| EvidenceArtifact | Saved file + hash + integrity status |
-| ForensicEvent | Normalized event linked to evidence |
-| AuditLog | Investigator / system actions |
-
-## Testing
-
-```bash
-python -m pytest
-```
-
-Targeted scripts:
-
-```bash
-python test_phase1.py
-python test_fs.py
-python test_offline_analysis.py
-python test_sysmon_adapter.py
-```
-
-## Known Notes and Limitations
-
-- Research / academic prototype — use only where you are authorized to monitor  
-- Live precision depends on polling intervals; short-lived processes may be missed  
-- Full network PID mapping on Windows may require elevated privileges  
-- Large graphs can be heavy; Simple view and debouncing reduce UI freeze risk  
-- Collectors watch **this PC only** — not remote endpoints  
-
-## Web app (branch `feature/webapp`)
-
-Light **white + blue** investigation UI. Same forensic pipeline as the desktop (`core/`). Uses **`web_data/`** only.
-
-**Docs:** [PHASE_A.md](docs/webapp/PHASE_A.md) · [PHASE_B_J.md](docs/webapp/PHASE_B_J.md) · [web/README.md](web/README.md)
-
-Quick start:
+### Terminal 1 — API
 
 ```powershell
-git checkout feature/webapp
-
-# Terminal 1 — API
 cd D:\D_forensics
 $env:PYTHONPATH = (Get-Location).Path
 pip install -r api/requirements.txt
 uvicorn api.main:app --reload --app-dir .
+```
 
-# Terminal 2 — UI
-cd web
+Check:
+
+- http://127.0.0.1:8000/health → `"phase": "J"`
+- http://127.0.0.1:8000/docs → interactive API docs
+
+### Terminal 2 — UI
+
+```powershell
+cd D:\D_forensics\web
 npm install
 npm run dev
 ```
 
-Open http://127.0.0.1:5173  
-API health: http://127.0.0.1:8000/health → `"phase": "J"`
+Open: **http://127.0.0.1:5173**
+
+### Automated API smoke
+
+```powershell
+cd D:\D_forensics
+$env:PYTHONPATH = (Get-Location).Path
+python api/smoke_phase_b_j.py
+```
+
+Expect lines ending with `OK phase B–J smoke`.  
+Note: smoke creates cases named like `Smoke B-J` on the Home page (safe to ignore or delete by clearing `web_data/` — see below).
+
+### Manual test (web) — short checklist
+
+| Step | What to do | Pass if |
+|------|------------|---------|
+| 1 | Home → **New investigation** | Case Overview opens with “What next?” |
+| 2 | **Import** → upload `web/fixtures/sample_evidence.json` | File listed as a saved record |
+| 3 | **Analyze** (Overview or Import) | Progress finishes; activity count &gt; 0 |
+| 4 | **Timeline** | Plain sentences; click opens drawer |
+| 5 | **Connections** | Graph with Simple view; node click shows story |
+| 6 | **Findings** | “Needs a look” and/or activity stories |
+| 7 | **Integrity** → **Verify now** | Status like “Unchanged” (hash secondary) |
+| 8 | Overview **Export** Markdown/HTML | File downloads |
+| 9 | Optional: **Live watch** Start → activity → **Stop** | Counts rise; stop before Analyze |
+| 10 | Optional: Import **From desktop capture** | Folders under `data/evidence/` appear after desktop capture |
+
+Full UI guide: **[web/README.md](web/README.md)**
+
+### Pass desktop data into the web app
+
+1. Run the **desktop** app, capture or import evidence → files under `data/evidence/<folder>/`
+2. In the **web** app, open a case → **Import** → **From desktop capture**
+3. Pick the folder → import → **Analyze**
+
+Or upload any `.json` / `.csv` / `.log` / `.txt` / `.evtx` on the Import page.
+
+### Clear web test data (fresh Home page)
+
+Stop the API, then:
+
+```powershell
+Remove-Item -Force D:\D_forensics\web_data\forensics_web.db* -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force D:\D_forensics\web_data\evidence, D:\D_forensics\web_data\graphs, D:\D_forensics\web_data\cases -ErrorAction SilentlyContinue
+```
+
+Restart the API and refresh the browser.
+
+### Web phases (A–J)
 
 | Phase | Focus | Status |
 |-------|--------|--------|
-| A | Foundations, IA, glossary, tokens | Done |
+| A | Foundations, IA, glossary, light tokens | Done |
 | B | Case shell & home | Done |
 | C | Import + analysis jobs | Done |
 | D | Timeline | Done |
@@ -262,28 +243,61 @@ API health: http://127.0.0.1:8000/health → `"phase": "J"`
 | I | Desktop evidence bridge | Done |
 | J | Hardening & smoke | Done |
 
-Smoke:
+---
 
-```powershell
-$env:PYTHONPATH = (Get-Location).Path
-python api/smoke_phase_b_j.py
-```
+## Data model (shared)
 
-## Roadmap notes
+| Table | Purpose |
+|-------|---------|
+| Case | Investigation container |
+| EvidenceArtifact | Saved file + SHA-256 + integrity status |
+| ForensicEvent | Normalized event linked to evidence |
+| AuditLog | Investigator / system actions |
 
-Desktop and web develop in parallel. Web data stays under `web_data/`. Desktop bridge copies evidence folders; it does not share `forensics.db`.
-
-## Related Documentation
-
-- [technical_audit_report.md](technical_audit_report.md) — earlier technical observations (some items may be outdated vs current GUI)
-- [evaluation/run_evaluation.py](evaluation/run_evaluation.py) — evaluation helpers
-- [docs/webapp/PHASE_A.md](docs/webapp/PHASE_A.md) — webapp clarity contract
-- [docs/webapp/PHASE_B_J.md](docs/webapp/PHASE_B_J.md) — phases B–J notes
-
-## Responsible Use
-
-Use this software only in environments where you have proper authorization. Preserve originals before reprocessing, and maintain chain-of-custody discipline for real investigations.
+Live evidence (desktop): `data/evidence/<case_id>/…`  
+Web evidence: `web_data/evidence/<case_id>/…`
 
 ---
 
-Contributions and refinements for academic and forensic experimentation are welcome.
+## Desktop unit / script tests
+
+```powershell
+python -m pytest
+python test_phase1.py
+python test_fs.py
+python test_offline_analysis.py
+python test_sysmon_adapter.py
+```
+
+---
+
+## Limitations
+
+- Academic / research prototype — **authorized use only**
+- Live capture is **this PC only** (not a remote agent)
+- Short-lived processes may be missed (polling)
+- Full network PID mapping on Windows may need elevated privileges
+- Large graphs can be heavy — use Simple view
+- Web API has **no login** — keep it on `127.0.0.1`
+
+---
+
+## Safety note
+
+This is a **local forensics tool**, not remote malware. With monitoring on, it records process / network / (desktop) file activity on your machine and stores it locally. Use only where you are allowed to monitor. Stop monitoring when finished. Do not expose the API to the public internet.
+
+---
+
+## Related docs
+
+- [api/README.md](api/README.md) — API run, endpoints overview, smoke  
+- [web/README.md](web/README.md) — UI run + manual test plan  
+- [docs/webapp/PHASE_A.md](docs/webapp/PHASE_A.md) — clarity contract & glossary  
+- [docs/webapp/PHASE_B_J.md](docs/webapp/PHASE_B_J.md) — implementation notes  
+- [technical_audit_report.md](technical_audit_report.md) — older audit (may be outdated)
+
+---
+
+## Responsible use
+
+Use only with proper authorization. Preserve originals before reprocessing. Maintain chain-of-custody discipline for real investigations.

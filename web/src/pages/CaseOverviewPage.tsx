@@ -17,6 +17,7 @@ export function CaseOverviewPage() {
   const { caseDetail, setCaseDetail } = useOutletContext<CaseOutletContext>();
   const [live, setLive] = useState<LiveStatus | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [liveBusy, setLiveBusy] = useState(false);
   const [jobMessage, setJobMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -69,6 +70,7 @@ export function CaseOverviewPage() {
 
   async function onLiveToggle() {
     setError(null);
+    setLiveBusy(true);
     try {
       if (live?.this_case_active) {
         await stopLive(caseId);
@@ -78,6 +80,8 @@ export function CaseOverviewPage() {
       await refresh();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Live control failed");
+    } finally {
+      setLiveBusy(false);
     }
   }
 
@@ -120,8 +124,17 @@ export function CaseOverviewPage() {
           <button
             type="button"
             className="btn btn--primary"
-            disabled={analyzing || caseDetail.evidence_count === 0}
+            disabled={
+              analyzing ||
+              caseDetail.evidence_count === 0 ||
+              Boolean(live?.this_case_active)
+            }
             onClick={() => void onAnalyze()}
+            title={
+              live?.this_case_active
+                ? "Stop live watch before Analyze"
+                : undefined
+            }
           >
             {analyzing ? "Analyzing…" : "Analyze"}
           </button>
@@ -129,7 +142,7 @@ export function CaseOverviewPage() {
             Import evidence
           </Link>
         </div>
-        {jobMessage && analyzing && <p className="muted">{jobMessage}</p>}
+        {jobMessage && <p className="muted">{jobMessage}</p>}
         {error && <p className="status-err">{error}</p>}
       </section>
 
@@ -208,8 +221,30 @@ export function CaseOverviewPage() {
               : null}
           </p>
         )}
-        <button type="button" className="btn btn--ghost" onClick={() => void onLiveToggle()}>
-          {live?.this_case_active ? "Stop live watch" : "Start live watch"}
+        <button
+          type="button"
+          className="btn btn--ghost"
+          disabled={
+            liveBusy ||
+            analyzing ||
+            Boolean(live?.running && !live.this_case_active)
+          }
+          onClick={() => void onLiveToggle()}
+          title={
+            live?.running && !live.this_case_active
+              ? "Stop live watch on the other case first"
+              : analyzing
+                ? "Wait for analysis to finish"
+                : undefined
+          }
+        >
+          {liveBusy
+            ? "Please wait…"
+            : live?.this_case_active
+              ? "Stop live watch"
+              : live?.running
+                ? "Live watch busy (other case)"
+                : "Start live watch"}
         </button>
       </section>
 

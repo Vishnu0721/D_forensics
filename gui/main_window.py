@@ -33,8 +33,19 @@ from gui.incident_language import (
     format_incidents_page_html,
     severity_color,
 )
-from gui.integrity_ui import human_source_label, map_status_display, STATUS_HELP
+from gui.integrity_ui import (
+    human_source_label,
+    map_status_display,
+    STATUS_HELP,
+    first_events_by_evidence,
+    IntegrityCheckWorker,
+)
 from gui.quick_tour import QuickTourDialog, should_show_tour, mark_tour_seen
+from core.paths import DEBUG_LOGGING
+from core.qt_threads import stop_qthread
+
+# Large QTableWidgets are slow to build; show the newest / most important rows.
+MAX_INTEGRITY_ROWS = 2000
 
 class MainWindow(QMainWindow):
     batch_ready = Signal(list)
@@ -62,7 +73,11 @@ class MainWindow(QMainWindow):
         self.cached_suspicious = []
         self.cached_incidents = []
         self.graph_version = 0
-        self._latest_graph_snapshot = None
+        # The UI only ever reads snapshots; the live graph is mutated by worker threads.
+        self._latest_graph_snapshot = self.graph_db.snapshot()
+        self._integrity_thread = None
+        self._integrity_worker = None
+        self._integrity_silent = True
         self._stat_events = 0
         self._stat_evidence = 0
         self._last_event_at = None
@@ -82,6 +97,7 @@ class MainWindow(QMainWindow):
         self.correlation_worker.graph_updated.connect(self.on_graph_updated)
         self.correlation_worker.suspicious_updated.connect(self.on_suspicious_updated)
         self.correlation_worker.incidents_updated.connect(self.on_incidents_updated)
+        self.correlation_worker.analysis_error.connect(self.on_analysis_error)
 
         self.batch_ready.connect(self.correlation_worker.process_batch)
 
@@ -139,8 +155,8 @@ class MainWindow(QMainWindow):
             self.stop_monitoring(auto_verify=False)
         if hasattr(self, "graph_widget"):
             self.graph_widget.cleanup()
-        self.correlation_thread.quit()
-        self.correlation_thread.wait(2000)
+        stop_qthread(self._integrity_thread, 5000)
+        stop_qthread(self.correlation_thread, 2000)
         self.monitor.shutdown()
         try:
             self.graph_db.save()
@@ -326,6 +342,9 @@ class MainWindow(QMainWindow):
         )
         self.integrity_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         integrity_layout.addWidget(self.integrity_table, stretch=1)
+        self.integrity_count_label = QLabel("")
+        self.integrity_count_label.setStyleSheet("color: #555; font-size: 11px;")
+        integrity_layout.addWidget(self.integrity_count_label)
         self.integrity_help_label = QLabel(
             "<b>Status meanings:</b> "
             "<span style='color:#2e7d32;'>Unchanged</span> = file still matches its fingerprint · "
@@ -581,8 +600,13 @@ class MainWindow(QMainWindow):
         self.batch_ready.emit(batch)
         self._update_filter_help()
         
-        elapsed = (time.perf_counter() - start_time) * 1000
-        print(f"[PERF] GUI refresh: {elapsed:.2f} ms")
+        if DEBUG_LOGGING:
+            elapsed = (time.perf_counter() - start_time) * 1000
+            print(f"[PERF] GUI refresh: {elapsed:.2f} ms")
+
+    @Slot(str)
+    def on_analysis_error(self, message):
+        print(f"Correlation/analysis error: {message}")
             
     @Slot(list)
     def on_correlations_found(self, relationships):
@@ -606,9 +630,9 @@ class MainWindow(QMainWindow):
         self.update_incidents_ui()
 
     def _analysis_graph(self):
-        if self._latest_graph_snapshot is not None:
-            return self._latest_graph_snapshot
-        return self.graph_db.graph
+        if self._latest_graph_snapshot is None:
+            self._latest_graph_snapshot = self.graph_db.snapshot()
+        return self._latest_graph_snapshot
 
     def _refresh_graph_view(self):
         graph = self._analysis_graph()
@@ -672,11 +696,9 @@ class MainWindow(QMainWindow):
         self.lbl_incidents.setText(str(inc_count))
         self.lbl_suspicious.setText(str(suspicious_count))
         
-        user_acts = sum(1 for v in self.classification_engine._cache.values() if v["classification"] == "USER_ACTIVITY")
-        bg_acts = sum(1 for v in self.classification_engine._cache.values() if v["classification"] == "BACKGROUND_ACTIVITY")
-        
-        self.lbl_user_acts.setText(str(user_acts))
-        self.lbl_bg_acts.setText(str(bg_acts))
+        counts = self.classification_engine.classification_counts()
+        self.lbl_user_acts.setText(str(counts.get("USER_ACTIVITY", 0)))
+        self.lbl_bg_acts.setText(str(counts.get("BACKGROUND_ACTIVITY", 0)))
         self._update_monitor_banner()
 
     @Slot(object)
@@ -747,9 +769,9 @@ class MainWindow(QMainWindow):
             item.setForeground(QColor("#757575"))
         return item
 
-    def _fill_integrity_row(self, row: int, art: EvidenceArtifact, current_hash: str = None, checked_at: str = None):
+    def _fill_integrity_row(self, row: int, art: EvidenceArtifact, current_hash: str = None, checked_at: str = None, event=None):
         self.integrity_table.setItem(row, 0, QTableWidgetItem(art.id))
-        self.integrity_table.setItem(row, 1, QTableWidgetItem(human_source_label(art, self.db)))
+        self.integrity_table.setItem(row, 1, QTableWidgetItem(human_source_label(art, self.db, event)))
 
         orig_hash_short = (art.sha256_hash[:16] + "...") if art.sha256_hash else "N/A"
         self.integrity_table.setItem(row, 2, QTableWidgetItem(orig_hash_short))
@@ -768,36 +790,91 @@ class MainWindow(QMainWindow):
         ts_str = checked_at or (ts.strftime("%Y-%m-%d %H:%M:%S") if ts else "—")
         self.integrity_table.setItem(row, 5, QTableWidgetItem(ts_str))
 
-    def populate_integrity_table(self):
-        artifacts = self.db.query(EvidenceArtifact).filter(
-            EvidenceArtifact.case_id == self.current_case.id
-        ).all()
+    def _set_integrity_count(self, shown: int, total: int):
+        if total > shown:
+            self.integrity_count_label.setText(
+                f"Showing {shown} of {total} evidence files (changed or missing files first, then newest)."
+            )
+        else:
+            self.integrity_count_label.setText(f"{total} evidence files.")
 
-        self.integrity_table.setRowCount(0)
+    def populate_integrity_table(self):
+        case_filter = EvidenceArtifact.case_id == self.current_case.id
+        total = self.db.query(EvidenceArtifact).filter(case_filter).count()
+        artifacts = (
+            self.db.query(EvidenceArtifact)
+            .filter(case_filter)
+            .order_by(EvidenceArtifact.collection_timestamp.desc())
+            .limit(MAX_INTEGRITY_ROWS)
+            .all()
+        )
+        events = first_events_by_evidence(self.db, (a.id for a in artifacts))
+
+        self.integrity_table.setUpdatesEnabled(False)
+        self.integrity_table.setRowCount(len(artifacts))
         for row, art in enumerate(artifacts):
-            self.integrity_table.insertRow(row)
-            self._fill_integrity_row(row, art)
+            self._fill_integrity_row(row, art, event=events.get(art.id))
+        self.integrity_table.setUpdatesEnabled(True)
+        self._set_integrity_count(len(artifacts), total)
 
     def verify_integrity(self, silent: bool = False):
-        from core.services.integrity import verify_all_evidence
-        try:
-            results = verify_all_evidence(self.db, self.current_case.id)
-        except Exception as e:
-            print(f"Integrity verification failed: {e}")
+        if self._integrity_thread is not None:
             if not silent:
-                QMessageBox.warning(self, "Integrity check", f"Could not verify evidence:\n{e}")
+                QMessageBox.information(self, "Integrity check", "An integrity check is already running.")
             return
 
-        self.integrity_table.setRowCount(0)
-        artifacts_by_id = {
-            art.id: art
-            for art in self.db.query(EvidenceArtifact).filter(
-                EvidenceArtifact.case_id == self.current_case.id
-            ).all()
-        }
+        self._integrity_silent = silent
+        self.btn_verify.setEnabled(False)
+        self.btn_verify.setText("Checking integrity…")
 
-        for row, res in enumerate(results):
-            self.integrity_table.insertRow(row)
+        self._integrity_thread = QThread(self)
+        self._integrity_worker = IntegrityCheckWorker(self.current_case.id)
+        self._integrity_worker.moveToThread(self._integrity_thread)
+        self._integrity_thread.started.connect(self._integrity_worker.run)
+        self._integrity_worker.finished.connect(self._on_integrity_finished)
+        self._integrity_worker.failed.connect(self._on_integrity_failed)
+        self._integrity_worker.finished.connect(self._integrity_thread.quit)
+        self._integrity_worker.failed.connect(self._integrity_thread.quit)
+        self._integrity_thread.finished.connect(self._on_integrity_thread_done)
+        self._integrity_thread.start()
+
+    def _on_integrity_thread_done(self):
+        if self._integrity_worker is not None:
+            self._integrity_worker.deleteLater()
+        if self._integrity_thread is not None:
+            self._integrity_thread.deleteLater()
+        self._integrity_worker = None
+        self._integrity_thread = None
+        self.btn_verify.setEnabled(True)
+        self.btn_verify.setText("Verify Integrity")
+
+    @Slot(str)
+    def _on_integrity_failed(self, message: str):
+        print(f"Integrity verification failed: {message}")
+        if not self._integrity_silent:
+            QMessageBox.warning(self, "Integrity check", f"Could not verify evidence:\n{message}")
+
+    @Slot(list)
+    def _on_integrity_finished(self, results: list):
+        silent = self._integrity_silent
+        # The worker committed status changes through its own session.
+        self.db.expire_all()
+
+        severity = {"MODIFIED": 0, "UNVERIFIABLE": 1}
+        ordered = sorted(results, key=lambda r: severity.get(r["status"], 2))
+        shown = ordered[:MAX_INTEGRITY_ROWS]
+        shown_ids = [r["evidence_id"] for r in shown]
+
+        artifacts_by_id = {}
+        for start in range(0, len(shown_ids), 500):
+            chunk = shown_ids[start:start + 500]
+            for art in self.db.query(EvidenceArtifact).filter(EvidenceArtifact.id.in_(chunk)):
+                artifacts_by_id[art.id] = art
+        events = first_events_by_evidence(self.db, shown_ids)
+
+        self.integrity_table.setUpdatesEnabled(False)
+        self.integrity_table.setRowCount(len(shown))
+        for row, res in enumerate(shown):
             art = artifacts_by_id.get(res["evidence_id"])
             if art:
                 self._fill_integrity_row(
@@ -805,6 +882,7 @@ class MainWindow(QMainWindow):
                     art,
                     current_hash=res.get("current_hash"),
                     checked_at=res.get("time"),
+                    event=events.get(art.id),
                 )
             else:
                 self.integrity_table.setItem(row, 0, QTableWidgetItem(res["evidence_id"]))
@@ -823,6 +901,8 @@ class MainWindow(QMainWindow):
                 )
                 self.integrity_table.setItem(row, 4, self._integrity_status_item(res["status"]))
                 self.integrity_table.setItem(row, 5, QTableWidgetItem(res.get("time") or "—"))
+        self.integrity_table.setUpdatesEnabled(True)
+        self._set_integrity_count(len(shown), len(results))
 
         if not silent:
             modified = sum(1 for r in results if r["status"] == "MODIFIED")
@@ -882,7 +962,7 @@ class MainWindow(QMainWindow):
         self._populate_suspicious_list(result)
 
         self.graph_version += 1
-        self._latest_graph_snapshot = self.graph_db.graph.copy()
+        self._latest_graph_snapshot = self.graph_db.snapshot()
 
         ev_cls = {}
         for ev in result.events:

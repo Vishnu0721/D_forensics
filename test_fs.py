@@ -4,9 +4,18 @@ import shutil
 from PySide6.QtCore import QCoreApplication
 from core.monitoring.filesystem import FilesystemCollector
 
+captured = []
+
 def print_event(data):
-    # This will just prove the events are emitted. Diagnostic logs inside the collector will also print.
-    pass
+    captured.append(data['event_type'])
+    print(f"[EVENT] {data['event_type']}: {data['path']}")
+
+def wait(app, seconds):
+    # Events are delivered through the Qt event loop, so keep it running while waiting.
+    end = time.time() + seconds
+    while time.time() < end:
+        app.processEvents()
+        time.sleep(0.05)
 
 if __name__ == "__main__":
     app = QCoreApplication([])
@@ -22,7 +31,7 @@ if __name__ == "__main__":
     collector.start_monitoring()
     
     print("Started monitoring...")
-    time.sleep(2) # Give watchdog time to initialize
+    wait(app, 2) # Give watchdog time to initialize
     
     test_file_path = os.path.join(test_dir_1, "test.txt")
     renamed_file_path = os.path.join(test_dir_1, "renamed_test.txt")
@@ -32,29 +41,35 @@ if __name__ == "__main__":
     print("\n--- Creating ---")
     with open(test_file_path, "w") as f:
         f.write("Hello")
-    time.sleep(1)
+    wait(app, 1)
     
     # Modify
     print("\n--- Modifying ---")
     with open(test_file_path, "a") as f:
         f.write(" World")
-    time.sleep(1)
+    wait(app, 1)
     
     # Rename
     print("\n--- Renaming ---")
     os.rename(test_file_path, renamed_file_path)
-    time.sleep(1)
+    wait(app, 1)
     
     # Move
     print("\n--- Moving ---")
     shutil.move(renamed_file_path, moved_file_path)
-    time.sleep(1)
+    wait(app, 1)
     
     # Delete
     print("\n--- Deleting ---")
     os.remove(moved_file_path)
-    time.sleep(2)
+    wait(app, 2)
     
     print("\nStopping monitoring...")
     collector.stop_monitoring()
-    print("Done.")
+    collector.wait(3000)
+
+    missing = {"file_created", "file_deleted"} - set(captured)
+    if missing:
+        print(f"FAILED: expected events not captured: {sorted(missing)}")
+        raise SystemExit(1)
+    print(f"Captured {len(captured)} events. Done.")

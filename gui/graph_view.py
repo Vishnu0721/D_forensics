@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QLineF, QThread, Signal, QObject, Slot, QTimer
 from PySide6.QtGui import QColor, QPen, QBrush, QFont, QTransform, QPainter
+from core.qt_threads import stop_qthread
 
 NODE_COLORS = {
     "Process": QColor("#e74c3c"),
@@ -154,6 +155,8 @@ class ReverseDnsWorker(QObject):
     @Slot(list)
     def resolve_many(self, ips):
         for ip in ips:
+            if QThread.currentThread().isInterruptionRequested():
+                return
             if not ip or ip in DNS_CACHE:
                 cached = DNS_CACHE.get(ip)
                 if cached:
@@ -482,14 +485,8 @@ class InteractiveGraphWidget(QWidget):
             self._dns_worker.resolved.disconnect()
         except Exception:
             pass
-        self._layout_thread.quit()
-        if not self._layout_thread.wait(1500):
-            self._layout_thread.terminate()
-            self._layout_thread.wait(500)
-        self._dns_thread.quit()
-        if not self._dns_thread.wait(1500):
-            self._dns_thread.terminate()
-            self._dns_thread.wait(500)
+        stop_qthread(self._layout_thread, 1500)
+        stop_qthread(self._dns_thread, 1500)
 
     def on_filter_changed(self, text):
         self._pending_refresh = True

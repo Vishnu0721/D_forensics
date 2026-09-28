@@ -1,11 +1,17 @@
 import os
 import sys
+import atexit
 import shutil
 import json
 import tempfile
 from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Isolated database/evidence folder: never touch the real forensics.db or data/.
+_TEST_DATA_DIR = tempfile.mkdtemp(prefix="forensics_test_")
+os.environ["FORENSICS_DATA_DIR"] = _TEST_DATA_DIR
+atexit.register(shutil.rmtree, _TEST_DATA_DIR, ignore_errors=True)
 
 from core.database import init_db, SessionLocal
 from core.database.models import Case, EvidenceArtifact, ForensicEvent
@@ -90,11 +96,6 @@ def make_test_json(path: str) -> dict:
 
 
 def main():
-    if os.path.exists("forensics.db"):
-        os.remove("forensics.db")
-    if os.path.exists("data"):
-        shutil.rmtree("data")
-
     init_db()
     db = SessionLocal()
     case = Case(name="Offline Test Case", description="Controlled offline analysis test")

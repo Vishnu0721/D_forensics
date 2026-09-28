@@ -1,8 +1,9 @@
 from typing import List, Dict, Any
-from PySide6.QtCore import QObject, Signal, Slot
+from PySide6.QtCore import QObject, Signal, Slot, QTimer
 import time
 from core.database.models import ForensicEvent
 from core.database import SessionLocal
+from core.paths import DEBUG_LOGGING
 from core.services.graph import (
     make_process_entity,
     make_ip_entity,
@@ -17,6 +18,14 @@ WEIGHTS = {
     'entity': 0.4,
     'source': 0.2
 }
+
+_HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
+
+
+def _is_real_sha256(value: Any) -> bool:
+    """Collectors use placeholders like 'Unavailable' or 'skipped_large_file'; only real digests may match."""
+    return isinstance(value, str) and len(value) == 64 and all(c in _HEX_DIGITS for c in value)
+
 
 def calculate_temporal_score(event_a: ForensicEvent, event_b: ForensicEvent, max_window_seconds: int = 300) -> float:
     """Calculates a temporal proximity score between 0.0 and 1.0."""
@@ -253,8 +262,8 @@ def correlate_new_event(new_event: ForensicEvent, history: List[ForensicEvent], 
 
         # Rule 6: Process Hash Matching
         if event_early.event_type == 'process_started' and event_late.event_type == 'process_started':
-            if event_early.file_hash and event_late.file_hash and event_early.file_hash != 'unavailable' and event_early.file_hash != 'permission_denied':
-                if event_early.file_hash == event_late.file_hash and event_early.pid != event_late.pid:
+            if _is_real_sha256(event_early.file_hash) and _is_real_sha256(event_late.file_hash):
+                if event_early.file_hash.lower() == event_late.file_hash.lower() and event_early.pid != event_late.pid:
                     conf = 1.0  # Exact hash match is strong evidence
                     relationships.append({
                         "source": make_process_entity(host_early, event_early.pid, event_early.process),
@@ -270,6 +279,9 @@ def correlate_new_event(new_event: ForensicEvent, history: List[ForensicEvent], 
     return relationships
 
 
+ANALYSIS_MIN_INTERVAL_SECONDS = 1.5
+
+
 class CorrelationWorker(QObject):
     correlations_found = Signal(list)
     graph_updated = Signal(object) # emits nx_graph snapshot
@@ -281,8 +293,8 @@ class CorrelationWorker(QObject):
         super().__init__()
         self.case_id = case_id
         self.graph_db = graph_db
-        # We will keep a reference to graph_db, but we should not do heavy modifications 
-        # unless synchronized. Actually, graph_db is thread-safe for simple adds, but networkx is not entirely.
+        self._last_analysis = 0.0
+        self._analysis_timer = None
         
     @Slot(list)
     def process_batch(self, events: List[ForensicEvent]):
@@ -304,28 +316,47 @@ class CorrelationWorker(QObject):
                     all_new_relationships.extend(rels)
                     
             if all_new_relationships:
-                # Add to graph
                 self.graph_db.populate_from_correlations(all_new_relationships)
-                
-                # Snapshot graph for analysis
-                graph_snapshot = self.graph_db.graph.copy()
-                
-                # Run heavy analysis
-                from core.services.suspicious import detect_suspicious_activity
-                from core.services.reconstruction import reconstruct_incidents
-                
-                suspicious = detect_suspicious_activity(graph_snapshot)
-                incidents = reconstruct_incidents(graph_snapshot, suspicious)
-                
                 self.correlations_found.emit(all_new_relationships)
-                self.graph_updated.emit(graph_snapshot)
-                self.suspicious_updated.emit(suspicious)
-                self.incidents_updated.emit(incidents)
+                self._schedule_analysis()
                 
         except Exception as e:
             self.analysis_error.emit(str(e))
         finally:
             db.close()
             
-        elapsed = (time.perf_counter() - start_time) * 1000
-        print(f"[PERF] correlation and analysis: {elapsed:.2f} ms")
+        if DEBUG_LOGGING:
+            elapsed = (time.perf_counter() - start_time) * 1000
+            print(f"[PERF] correlation: {elapsed:.2f} ms")
+
+    def _schedule_analysis(self):
+        """Whole-graph analysis is expensive; coalesce bursts into one run per interval."""
+        elapsed = time.monotonic() - self._last_analysis
+        if elapsed >= ANALYSIS_MIN_INTERVAL_SECONDS:
+            self._run_analysis()
+            return
+        if self._analysis_timer is None:
+            # Created lazily so the timer lives in this worker's thread.
+            self._analysis_timer = QTimer(self)
+            self._analysis_timer.setSingleShot(True)
+            self._analysis_timer.timeout.connect(self._run_analysis)
+        if not self._analysis_timer.isActive():
+            remaining_ms = int((ANALYSIS_MIN_INTERVAL_SECONDS - elapsed) * 1000) + 1
+            self._analysis_timer.start(remaining_ms)
+
+    @Slot()
+    def _run_analysis(self):
+        self._last_analysis = time.monotonic()
+        try:
+            from core.services.suspicious import detect_suspicious_activity
+            from core.services.reconstruction import reconstruct_incidents
+
+            graph_snapshot = self.graph_db.snapshot()
+            suspicious = detect_suspicious_activity(graph_snapshot)
+            incidents = reconstruct_incidents(graph_snapshot, suspicious)
+
+            self.graph_updated.emit(graph_snapshot)
+            self.suspicious_updated.emit(suspicious)
+            self.incidents_updated.emit(incidents)
+        except Exception as e:
+            self.analysis_error.emit(str(e))

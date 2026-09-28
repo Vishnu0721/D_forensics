@@ -22,7 +22,7 @@ class EvidenceArtifact(Base):
     __tablename__ = "evidence_artifacts"
     
     id = Column(String, primary_key=True, default=generate_uuid)
-    case_id = Column(String, ForeignKey("cases.id"), nullable=False)
+    case_id = Column(String, ForeignKey("cases.id"), nullable=False, index=True)
     filename = Column(String, nullable=False)
     source_type = Column(String, nullable=False)  # e.g., "windows_log", "browser", "network"
     original_path = Column(String, nullable=False)
@@ -40,10 +40,10 @@ class ForensicEvent(Base):
     __tablename__ = "forensic_events"
     
     id = Column(String, primary_key=True, default=generate_uuid)
-    case_id = Column(String, ForeignKey("cases.id"), nullable=False)
-    evidence_id = Column(String, ForeignKey("evidence_artifacts.id"), nullable=False)
+    case_id = Column(String, ForeignKey("cases.id"), nullable=False, index=True)
+    evidence_id = Column(String, ForeignKey("evidence_artifacts.id"), nullable=False, index=True)
     
-    timestamp = Column(DateTime, nullable=False)
+    timestamp = Column(DateTime, nullable=False, index=True)
     source_type = Column(String, nullable=False)
     event_type = Column(String, nullable=False)
     

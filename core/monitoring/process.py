@@ -1,13 +1,46 @@
+import hashlib
+import os
 import psutil
 import time
 from datetime import datetime
 from .base import BaseCollector
+
+MAX_HASH_BYTES = 8 * 1024 * 1024
+HASH_CACHE_LIMIT = 2000
 
 class ProcessCollector(BaseCollector):
     def __init__(self, case_id: str, poll_interval: int = 2):
         super().__init__(case_id)
         self.poll_interval = poll_interval
         self._seen_pids = set()
+        self._hash_cache = {}
+
+    def _hash_executable(self, exe_path: str) -> str:
+        """SHA-256 of an executable, cached by (path, size, mtime)."""
+        try:
+            st = os.stat(exe_path)
+        except OSError:
+            return "Unavailable"
+        if st.st_size > MAX_HASH_BYTES:
+            return "skipped_large_file"
+        key = (exe_path.lower(), st.st_size, st.st_mtime_ns)
+        cached = self._hash_cache.get(key)
+        if cached:
+            return cached
+        h = hashlib.sha256()
+        try:
+            with open(exe_path, "rb") as f:
+                for byte_block in iter(lambda: f.read(65536), b""):
+                    if not self._is_running:
+                        return "Unavailable"
+                    h.update(byte_block)
+        except OSError:
+            return "Unavailable"
+        digest = h.hexdigest()
+        if len(self._hash_cache) >= HASH_CACHE_LIMIT:
+            self._hash_cache.clear()
+        self._hash_cache[key] = digest
+        return digest
         
     def run(self):
         # Capture baseline to avoid emitting events for already running processes
@@ -73,25 +106,11 @@ class ProcessCollector(BaseCollector):
                         except (psutil.NoSuchProcess, psutil.AccessDenied):
                             create_time = "Unavailable"
                             
-                        exe_path = p.exe() if hasattr(p, 'exe') and p.exe() else "Unavailable"
+                        exe_path = p.exe() or "Unavailable"
                         
                         sha256_hash = "Unavailable"
-                        if exe_path and exe_path != "Unavailable":
-                            try:
-                                import hashlib
-                                import os
-                                if os.path.getsize(exe_path) <= 8 * 1024 * 1024:
-                                    h = hashlib.sha256()
-                                    with open(exe_path, "rb") as f:
-                                        for byte_block in iter(lambda: f.read(8192), b""):
-                                            if not self._is_running:
-                                                break
-                                            h.update(byte_block)
-                                    sha256_hash = h.hexdigest()
-                                else:
-                                    sha256_hash = "skipped_large_file"
-                            except Exception:
-                                sha256_hash = "Unavailable"
+                        if exe_path != "Unavailable":
+                            sha256_hash = self._hash_executable(exe_path)
                                 
                         event = {
                             "timestamp": datetime.utcnow().isoformat() + "Z",

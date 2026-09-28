@@ -31,20 +31,21 @@ class IncidentReconstructionEngine:
         Generates a readable step-by-step text timeline based on the causal order of entities.
         """
         timeline = []
+        position = {node['id']: idx for idx, node in enumerate(ordered_nodes)}
         for i, node in enumerate(ordered_nodes):
             step = f"Step {i+1}: {node.get('type', 'Unknown')} '{node['id']}'"
             timeline.append(step)
             
-            # Check outgoing edges from this node to subsequent nodes to describe the action
+            # Describe outgoing edges to nodes that come later in the causal order
+            # (walk actual out-edges instead of testing every later node pair).
+            later_targets = {}
+            for _, target_id, key, edge_data in subgraph.out_edges(node['id'], keys=True, data=True):
+                if position.get(target_id, -1) > i:
+                    rel_type = edge_data.get('relationship_type', key)
+                    later_targets.setdefault(target_id, []).append(f"  -> {rel_type} -> {target_id}")
             out_edges = []
-            for j in range(i+1, len(ordered_nodes)):
-                target_id = ordered_nodes[j]['id']
-                if subgraph.has_edge(node['id'], target_id):
-                    # For MultiDiGraph, there could be multiple edges
-                    edge_data_dict = subgraph.get_edge_data(node['id'], target_id)
-                    for key, edge_data in edge_data_dict.items():
-                        rel_type = edge_data.get('relationship_type', key)
-                        out_edges.append(f"  -> {rel_type} -> {target_id}")
+            for target_id in sorted(later_targets, key=position.__getitem__):
+                out_edges.extend(later_targets[target_id])
             
             if out_edges:
                 timeline.extend(out_edges)

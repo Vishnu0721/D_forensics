@@ -4,8 +4,9 @@ from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLa
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 
-_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-TOUR_FLAG_FILE = os.path.join(_ROOT, "data", ".quick_tour_seen")
+from core.paths import DATA_DIR
+
+TOUR_FLAG_FILE = os.path.join(DATA_DIR, ".quick_tour_seen")
 
 
 def should_show_tour() -> bool:

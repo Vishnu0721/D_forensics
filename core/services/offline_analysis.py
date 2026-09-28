@@ -173,7 +173,7 @@ def run_offline_analysis(
         else:
             result.relationships = []
 
-        graph_snapshot = graph_db.graph.copy()
+        graph_snapshot = graph_db.snapshot()
 
         _emit(progress_cb, "Running suspicious detection engine...")
         suspicious = detect_suspicious_activity(graph_snapshot)

@@ -1,10 +1,15 @@
 import json
 import hashlib
+import os
+import time
+import uuid
 from PySide6.QtCore import QObject, Signal, Slot
 from typing import Dict, Any
 
 from core.database import SessionLocal
 from core.database.models import EvidenceArtifact, AuditLog
+from core.paths import EVIDENCE_DIR, DEBUG_LOGGING
+from core.qt_threads import stop_qthread
 from core.services.normalization import NORMALIZERS
 from .process import ProcessCollector
 from .filesystem import FilesystemCollector
@@ -19,7 +24,6 @@ class PersistenceWorker(QObject):
         
     @Slot(dict)
     def handle_raw_event(self, raw_event: Dict[str, Any]):
-        import time
         start_time = time.perf_counter()
         
         db = SessionLocal()
@@ -28,9 +32,8 @@ class PersistenceWorker(QObject):
             raw_json = json.dumps(raw_event, sort_keys=True)
             
             # Create physical directory
-            import os, uuid
             evidence_id = str(uuid.uuid4())
-            evidence_dir = os.path.join("data", "evidence", self.case_id)
+            evidence_dir = os.path.join(EVIDENCE_DIR, self.case_id)
             os.makedirs(evidence_dir, exist_ok=True)
             
             filename = f"{evidence_id}.json"
@@ -58,17 +61,17 @@ class PersistenceWorker(QObject):
                 integrity_status="VALID"
             )
             db.add(evidence)
-            db.commit()
-            db.refresh(evidence)
             
-            # 2. Normalization
+            # 2. Normalization (stored in the same transaction as its evidence)
+            forensic_event = None
             normalizer = NORMALIZERS.get(raw_event['source_type'])
             if normalizer:
-                forensic_event = normalizer(raw_event, self.case_id, evidence.id)
+                forensic_event = normalizer(raw_event, self.case_id, evidence_id)
                 db.add(forensic_event)
-                db.commit()
-                db.refresh(forensic_event)
+            db.commit()
                 
+            if forensic_event is not None:
+                db.refresh(forensic_event)
                 # 3. Notify the correlation engine and GUI
                 self.event_processed.emit(forensic_event)
                 
@@ -78,8 +81,9 @@ class PersistenceWorker(QObject):
         finally:
             db.close()
             
-        elapsed = (time.perf_counter() - start_time) * 1000
-        print(f"[PERF] persistence: {elapsed:.2f} ms")
+        if DEBUG_LOGGING:
+            elapsed = (time.perf_counter() - start_time) * 1000
+            print(f"[PERF] persistence: {elapsed:.2f} ms")
 
 
 class MonitoringManager(QObject):
@@ -126,7 +130,7 @@ class MonitoringManager(QObject):
                 pass
             if c.isRunning():
                 c.stop_monitoring()
-                c.wait(500)
+                stop_qthread(c, 500)
         self._create_collectors()
             
     def start_all(self):
@@ -150,10 +154,5 @@ class MonitoringManager(QObject):
     def shutdown(self):
         self.stop_all()
         for c in self.collectors:
-            if c.isRunning() and not c.wait(2000):
-                c.terminate()
-                c.wait(500)
-        self.worker_thread.quit()
-        if not self.worker_thread.wait(2000):
-            self.worker_thread.terminate()
-            self.worker_thread.wait(500)
+            stop_qthread(c, 2000)
+        stop_qthread(self.worker_thread, 2000)

@@ -220,7 +220,7 @@ class OfflineAnalysisDialog(QDialog):
 
     def _populate_graph(self, result: OfflineAnalysisResult):
         self.graph_widget.update_graph(
-            self.graph_db.graph,
+            self.graph_db.snapshot(),
             result.suspicious_activities,
             result.incidents,
             {}  

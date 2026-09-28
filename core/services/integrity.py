@@ -22,7 +22,8 @@ def verify_integrity(file_path: str, expected_hash: str):
     except Exception:
         return "MISSING/UNVERIFIABLE", None
 
-def verify_all_evidence(db, case_id: str):
+def verify_all_evidence(db, case_id: str, should_stop=None):
+    """Re-hash every artifact of a case. should_stop() lets a caller cancel between files."""
     from core.database.models import EvidenceArtifact, AuditLog
     import datetime
 
@@ -30,6 +31,8 @@ def verify_all_evidence(db, case_id: str):
     results = []
 
     for artifact in artifacts:
+        if should_stop is not None and should_stop():
+            break
         status, current_hash = verify_integrity(artifact.original_path, artifact.sha256_hash)
 
         mapped_status = "VALID"

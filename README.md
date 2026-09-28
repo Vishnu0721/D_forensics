@@ -36,7 +36,7 @@ Forensic evidence pipeline:
 
 ### Live Monitoring
 - Process start/stop collection (`psutil`)
-- Filesystem watching on common user and system paths (`watchdog`), with noise filtering
+- Filesystem watching on Downloads, Desktop, Documents (including OneDrive copies) and the Startup folder (`watchdog`), with noise filtering and a per-second rate limit. AppData, TEMP and System32 are not watched because their constant background churn made the system unresponsive.
 - Live network connection monitoring
 - Real-time evidence JSON on disk + database events
 - Clear LIVE/STOPPED status and collector feedback
@@ -188,6 +188,8 @@ Reconstruct incident stories
 
 Live evidence path: `data/evidence/<case_id>/<evidence_id>.json`  
 Graph cache: `data/<case_id>_graph.json`
+
+These paths (and `forensics.db`) are always relative to the project folder, not the folder you launch from. Set `FORENSICS_DATA_DIR` to store runtime data elsewhere (the tests use a temporary folder), and `FORENSICS_DEBUG=1` to print per-event diagnostics.
 
 ## Data Model
 

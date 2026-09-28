@@ -1,8 +1,21 @@
 import os
+import sys
 import time
+import atexit
+import shutil
+import tempfile
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Isolated database/evidence folder: never touch the real forensics.db or data/.
+_TEST_DATA_DIR = tempfile.mkdtemp(prefix="forensics_test_")
+os.environ["FORENSICS_DATA_DIR"] = _TEST_DATA_DIR
+atexit.register(shutil.rmtree, _TEST_DATA_DIR, ignore_errors=True)
+
 from PySide6.QtWidgets import QApplication
 from core.database import init_db, get_db, Case
 from core.monitoring.manager import MonitoringManager
+from core.paths import EVIDENCE_DIR
 from core.services.integrity import verify_all_evidence
 
 def test_phase1():
@@ -25,16 +38,20 @@ def test_phase1():
         app.processEvents()
         time.sleep(0.1)
         
-    monitor.stop_all()
+    monitor.shutdown()
+    app.processEvents()
     print("Monitor stopped.")
     
     # Check if files were created
-    evidence_dir = os.path.join("data", "evidence", str(case.id))
+    evidence_dir = os.path.join(EVIDENCE_DIR, str(case.id))
     if not os.path.exists(evidence_dir):
-        print(f"Directory not found: {evidence_dir}")
+        print(f"No live evidence captured in 3 seconds ({evidence_dir} not created).")
         return
         
-    files = os.listdir(evidence_dir)
+    files = [
+        name for name in os.listdir(evidence_dir)
+        if os.path.isfile(os.path.join(evidence_dir, name))
+    ]
     print(f"Found {len(files)} evidence files.")
     
     if files:
@@ -53,6 +70,7 @@ def test_phase1():
                 print("SUCCESS: Found modified file!")
     else:
         print("No files were created to modify.")
+    db.close()
 
 if __name__ == "__main__":
     test_phase1()

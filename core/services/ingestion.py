@@ -6,10 +6,16 @@ from datetime import datetime
 from typing import Tuple
 from sqlalchemy.orm import Session
 from core.database.models import EvidenceArtifact, AuditLog
+from core.paths import EVIDENCE_DIR
 from core.services.integrity import calculate_sha256
 
 
-def preserve_evidence_file(source_path: str, case_id: str, evidence_id: str = None) -> Tuple[str, str, int, str]:
+def preserve_evidence_file(
+    source_path: str,
+    case_id: str,
+    evidence_id: str = None,
+    evidence_root: str = None,
+) -> Tuple[str, str, int, str]:
     """
     Copies the source evidence file to a unique, immutable preserved location.
     Returns: (preserved_path, sha256_hash, file_size, mime_type)
@@ -25,7 +31,8 @@ def preserve_evidence_file(source_path: str, case_id: str, evidence_id: str = No
     file_size = os.path.getsize(source_path)
     mime_type, _ = mimetypes.guess_type(source_path)
 
-    preserve_dir = os.path.join("data", "evidence", case_id, "preserved")
+    root = evidence_root or EVIDENCE_DIR
+    preserve_dir = os.path.join(root, case_id, "preserved")
     os.makedirs(preserve_dir, exist_ok=True)
 
     name, ext = os.path.splitext(original_filename)
@@ -51,7 +58,8 @@ def ingest_preserved_evidence(
     source_file_path: str,
     source_type: str,
     actor: str,
-    upload_timestamp: datetime = None
+    upload_timestamp: datetime = None,
+    evidence_root: str = None,
 ) -> EvidenceArtifact:
     """
     Ingests a raw evidence file:
@@ -67,7 +75,7 @@ def ingest_preserved_evidence(
     original_filename = os.path.basename(source_file_path)
 
     preserved_path, file_hash, file_size, mime_type = preserve_evidence_file(
-        source_file_path, case_id, evidence_id
+        source_file_path, case_id, evidence_id, evidence_root=evidence_root
     )
 
     evidence = EvidenceArtifact(

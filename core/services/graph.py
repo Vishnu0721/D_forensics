@@ -2,6 +2,10 @@ import networkx as nx
 from typing import List, Dict, Any, Optional
 import json
 import os
+import threading
+import time
+
+from core.paths import DATA_DIR
 
 
 def make_process_entity(host: Optional[str], pid: Any, process: Optional[str]) -> Dict[str, Any]:
@@ -68,13 +72,37 @@ def make_device_entity(host: Optional[str], user: Optional[str] = None) -> Dict[
 
 
 class EvidenceGraph:
-    def __init__(self, case_id: str, storage_dir: str = "data"):
+    """In-memory evidence graph shared by the GUI, correlation and offline threads.
+
+    NetworkX is not thread-safe: mutate only via populate_from_correlations /
+    add_relationship, and read from other threads via snapshot().
+    """
+
+    def __init__(self, case_id: str, storage_dir: str = None):
         self.case_id = case_id
         self.graph = nx.MultiDiGraph()
-        self.storage_dir = storage_dir
+        self.lock = threading.RLock()
+        self._save_lock = threading.Lock()
+        self._revision = 0
+        self._saved_revision = 0
+        self.storage_dir = storage_dir or DATA_DIR
         os.makedirs(self.storage_dir, exist_ok=True)
         self.file_path = os.path.join(self.storage_dir, f"{case_id}_graph.json")
         self.load()
+
+    def snapshot(self) -> nx.MultiDiGraph:
+        """Independent copy safe to read while other threads keep correlating."""
+        with self.lock:
+            snap = nx.MultiDiGraph()
+            snap.graph.update(self.graph.graph)
+            snap.add_nodes_from((n, dict(d)) for n, d in self.graph.nodes(data=True))
+            for u, v, k, d in self.graph.edges(keys=True, data=True):
+                attrs = dict(d)
+                for list_key in ("evidence_ids", "reasons"):
+                    if list_key in attrs:
+                        attrs[list_key] = list(attrs[list_key])
+                snap.add_edge(u, v, key=k, **attrs)
+            return snap
 
     def _upsert_node(self, entity: Dict[str, Any]):
         node_id = entity["id"]
@@ -91,6 +119,11 @@ class EvidenceGraph:
 
     def add_relationship(self, rel: Dict[str, Any]):
         """Adds a relationship and its backing evidence to the graph."""
+        with self.lock:
+            self._revision += 1
+            self._add_relationship_locked(rel)
+
+    def _add_relationship_locked(self, rel: Dict[str, Any]):
         source = rel["source"]
         target = rel["target"]
         self._upsert_node(source)
@@ -135,28 +168,69 @@ class EvidenceGraph:
             )
 
     def populate_from_correlations(self, relationships: List[Dict[str, Any]]):
-        for rel in relationships:
-            self.add_relationship(rel)
+        with self.lock:
+            self._revision += 1
+            for rel in relationships:
+                self._add_relationship_locked(rel)
         # self.save() is debounced to main_window.py to avoid I/O bottlenecks
 
     def get_all_nodes(self) -> List[Dict[str, Any]]:
-        return [{"id": n, **d} for n, d in self.graph.nodes(data=True)]
+        with self.lock:
+            return [{"id": n, **d} for n, d in self.graph.nodes(data=True)]
 
     def get_all_edges(self) -> List[Dict[str, Any]]:
-        return [{"source": u, "target": v, **d} for u, v, d in self.graph.edges(data=True)]
+        with self.lock:
+            return [{"source": u, "target": v, **d} for u, v, d in self.graph.edges(data=True)]
 
-    def save(self):
+    def save(self, force: bool = False) -> bool:
         """Persists the in-memory graph to disk (zero-cost DB alternative)."""
-        data = nx.node_link_data(self.graph)
-        with open(self.file_path, "w") as f:
-            json.dump(data, f, indent=2)
+        with self._save_lock:
+            with self.lock:
+                if not force and self._revision == self._saved_revision:
+                    return True
+                revision = self._revision
+                try:
+                    data = nx.node_link_data(self.graph, edges="links")
+                except TypeError:
+                    data = nx.node_link_data(self.graph)
+                payload = json.dumps(data)
+            # Write to a temp file then swap, so a crash mid-write cannot corrupt the graph.
+            tmp_path = self.file_path + ".tmp"
+            try:
+                with open(tmp_path, "w", encoding="utf-8") as f:
+                    f.write(payload)
+                # Antivirus/indexers can briefly lock the target on Windows.
+                for attempt in range(5):
+                    try:
+                        os.replace(tmp_path, self.file_path)
+                        break
+                    except PermissionError:
+                        if attempt == 4:
+                            raise
+                        time.sleep(0.1)
+            except OSError as e:
+                print(f"Failed to save graph: {e}")
+                return False
+            with self.lock:
+                self._saved_revision = max(self._saved_revision, revision)
+            return True
 
     def load(self):
         """Loads the graph from disk if it exists."""
         if os.path.exists(self.file_path):
             try:
-                with open(self.file_path, "r") as f:
+                with open(self.file_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    self.graph = nx.node_link_graph(data)
+                try:
+                    graph = nx.node_link_graph(data, edges="links")
+                except TypeError:
+                    graph = nx.node_link_graph(data)
+                with self.lock:
+                    self.graph = graph
             except Exception as e:
                 print(f"Failed to load graph: {e}")
+                try:
+                    os.replace(self.file_path, self.file_path + ".corrupt")
+                    print(f"Unreadable graph kept as {self.file_path}.corrupt")
+                except OSError:
+                    pass

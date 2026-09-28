@@ -42,6 +42,7 @@ def flatten_winlog_record(rec: Dict[str, Any]) -> Dict[str, Any]:
         if flat["parent_process"]:
             flat["parent_process"] = ntpath.basename(flat["parent_process"])
         flat["parent_pid"] = event_data.get("ParentProcessId")
+        flat["command_line"] = event_data.get("CommandLine")
         flat["file_hash"] = _extract_sha256(event_data.get("Hashes"))
         flat["user"] = event_data.get("User")
         

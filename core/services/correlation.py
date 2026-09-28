@@ -27,6 +27,11 @@ def _is_real_sha256(value: Any) -> bool:
     return isinstance(value, str) and len(value) == 64 and all(c in _HEX_DIGITS for c in value)
 
 
+def _same_windows_name(a: Any, b: Any) -> bool:
+    """Windows paths and file names are case-insensitive (live file events are lower-cased)."""
+    return bool(a) and bool(b) and str(a).lower() == str(b).lower()
+
+
 def calculate_temporal_score(event_a: ForensicEvent, event_b: ForensicEvent, max_window_seconds: int = 300) -> float:
     """Calculates a temporal proximity score between 0.0 and 1.0."""
     time_diff = abs((event_a.timestamp - event_b.timestamp).total_seconds())
@@ -90,8 +95,8 @@ def correlate_events(events: List[ForensicEvent], max_window_seconds: int = 300)
             # Rule 2: File -> Process
             if event_a.event_type == 'file_created' and event_b.event_type == 'process_started':
                 if event_a.host == event_b.host:
-                    path_match = event_a.path and event_b.path and event_a.path == event_b.path
-                    file_match = event_a.file and event_b.process and event_a.file == event_b.process
+                    path_match = _same_windows_name(event_a.path, event_b.path)
+                    file_match = _same_windows_name(event_a.file, event_b.process)
                     
                     if path_match or file_match:
                         conf = (WEIGHTS['time'] * temp_score) + (WEIGHTS['entity'] * (1.0 if path_match else 0.8)) + (WEIGHTS['source'] * 0.9)
@@ -109,7 +114,9 @@ def correlate_events(events: List[ForensicEvent], max_window_seconds: int = 300)
                             "type": "EXECUTED_AS",
                             "confidence": round(min(conf, 1.0), 2),
                             "evidence_ids": [event_a.evidence_id, event_b.evidence_id],
-                            "reasons": reasons
+                            "reasons": reasons,
+                            "file_path": event_a.path,
+                            "time_diff_seconds": time_diff,
                         })
                     
             # Rule 3: Browser Download -> File Created
@@ -186,8 +193,8 @@ def correlate_new_event(new_event: ForensicEvent, history: List[ForensicEvent], 
         # Rule 2: File -> Process
         if event_early.event_type == 'file_created' and event_late.event_type == 'process_started':
             if event_early.host == event_late.host:
-                path_match = event_early.path and event_late.path and event_early.path == event_late.path
-                file_match = event_early.file and event_late.process and event_early.file == event_late.process
+                path_match = _same_windows_name(event_early.path, event_late.path)
+                file_match = _same_windows_name(event_early.file, event_late.process)
                 
                 if path_match or file_match:
                     conf = (WEIGHTS['time'] * temp_score) + (WEIGHTS['entity'] * (1.0 if path_match else 0.8)) + (WEIGHTS['source'] * 0.9)
@@ -205,7 +212,9 @@ def correlate_new_event(new_event: ForensicEvent, history: List[ForensicEvent], 
                         "type": "EXECUTED_AS",
                         "confidence": round(min(conf, 1.0), 2),
                         "evidence_ids": [event_early.evidence_id, event_late.evidence_id],
-                        "reasons": reasons
+                        "reasons": reasons,
+                        "file_path": event_early.path,
+                        "time_diff_seconds": time_diff,
                     })
                 
         # Rule 3: Browser Download -> File Created
@@ -280,6 +289,8 @@ def correlate_new_event(new_event: ForensicEvent, history: List[ForensicEvent], 
 
 
 ANALYSIS_MIN_INTERVAL_SECONDS = 1.5
+# Event-rule findings (parent process, command line, ports...) kept for the live session.
+MAX_EVENT_FINDINGS = 2000
 
 
 class CorrelationWorker(QObject):
@@ -295,6 +306,21 @@ class CorrelationWorker(QObject):
         self.graph_db = graph_db
         self._last_analysis = 0.0
         self._analysis_timer = None
+        self._event_findings = {}
+
+    def _collect_event_findings(self, events) -> bool:
+        from core.services.suspicious import detect_event_findings
+
+        added = False
+        for finding in detect_event_findings(events):
+            existing = self._event_findings.get(finding["activity_id"])
+            if existing is not None and existing["score"] >= finding["score"]:
+                continue
+            if existing is None and len(self._event_findings) >= MAX_EVENT_FINDINGS:
+                self._event_findings.pop(next(iter(self._event_findings)))
+            self._event_findings[finding["activity_id"]] = finding
+            added = True
+        return added
         
     @Slot(list)
     def process_batch(self, events: List[ForensicEvent]):
@@ -315,9 +341,12 @@ class CorrelationWorker(QObject):
                 if rels:
                     all_new_relationships.extend(rels)
                     
+            new_findings = self._collect_event_findings(events)
+
             if all_new_relationships:
                 self.graph_db.populate_from_correlations(all_new_relationships)
                 self.correlations_found.emit(all_new_relationships)
+            if all_new_relationships or new_findings:
                 self._schedule_analysis()
                 
         except Exception as e:
@@ -348,11 +377,14 @@ class CorrelationWorker(QObject):
     def _run_analysis(self):
         self._last_analysis = time.monotonic()
         try:
-            from core.services.suspicious import detect_suspicious_activity
+            from core.services.suspicious import detect_suspicious_activity, merge_findings
             from core.services.reconstruction import reconstruct_incidents
 
             graph_snapshot = self.graph_db.snapshot()
-            suspicious = detect_suspicious_activity(graph_snapshot)
+            suspicious = merge_findings(
+                detect_suspicious_activity(graph_snapshot),
+                list(self._event_findings.values()),
+            )
             incidents = reconstruct_incidents(graph_snapshot, suspicious)
 
             self.graph_updated.emit(graph_snapshot)

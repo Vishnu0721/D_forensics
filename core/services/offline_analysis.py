@@ -176,7 +176,7 @@ def run_offline_analysis(
         graph_snapshot = graph_db.snapshot()
 
         _emit(progress_cb, "Running suspicious detection engine...")
-        suspicious = detect_suspicious_activity(graph_snapshot)
+        suspicious = detect_suspicious_activity(graph_snapshot, events_sorted)
         result.suspicious_activities = suspicious
         _emit(progress_cb, f"Suspicious detection: {len(suspicious)} findings")
 

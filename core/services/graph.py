@@ -98,7 +98,7 @@ class EvidenceGraph:
             snap.add_nodes_from((n, dict(d)) for n, d in self.graph.nodes(data=True))
             for u, v, k, d in self.graph.edges(keys=True, data=True):
                 attrs = dict(d)
-                for list_key in ("evidence_ids", "reasons"):
+                for list_key in ("evidence_ids", "reasons", "file_paths"):
                     if list_key in attrs:
                         attrs[list_key] = list(attrs[list_key])
                 snap.add_edge(u, v, key=k, **attrs)
@@ -156,6 +156,7 @@ class EvidenceGraph:
                     
             # Update confidence to the maximum seen
             edge_data["confidence"] = max(edge_data.get("confidence", 0.0), rel.get("confidence", 0.0))
+            self._merge_edge_details(edge_data, rel)
         else:
             self.graph.add_edge(
                 source["id"],
@@ -166,6 +167,20 @@ class EvidenceGraph:
                 evidence_ids=list(rel.get("evidence_ids", [])),
                 reasons=list(rel.get("reasons", []))
             )
+            self._merge_edge_details(self.graph[source["id"]][target["id"]][edge_key], rel)
+
+    @staticmethod
+    def _merge_edge_details(edge_data: Dict[str, Any], rel: Dict[str, Any]):
+        """Structured details used by detection rules (instead of parsing reason text)."""
+        path = rel.get("file_path")
+        if path:
+            paths = edge_data.setdefault("file_paths", [])
+            if path not in paths:
+                paths.append(path)
+        diff = rel.get("time_diff_seconds")
+        if diff is not None:
+            current = edge_data.get("min_time_diff_seconds")
+            edge_data["min_time_diff_seconds"] = diff if current is None else min(current, diff)
 
     def populate_from_correlations(self, relationships: List[Dict[str, Any]]):
         with self.lock:

@@ -16,6 +16,7 @@ Clarity and stability improvements on top of the original pipeline:
 - **Evidence Integrity** tab with human labels (Unchanged / Changed on disk / File missing) and auto-verify on Stop
 - **Quick tour** (Help → Quick tour) for first-time users
 - Performance hardening: interruptible collectors, SQLite WAL, debounced graph updates, layout off the UI thread
+- **Expanded suspicious-activity detection**: 13 rules (was 3), covering malicious document launches, disguised system programs, built-in tools abused for downloads, obfuscated PowerShell, startup persistence, disguised files and attack ports (see [Suspicious Activity Rules](#suspicious-activity-rules))
 
 > A separate **light-theme web app** is planned (same repo, later). The desktop app remains the supported UI today.
 
@@ -50,12 +51,12 @@ Forensic evidence pipeline:
 ### Analysis and Correlation
 - Normalization of process, filesystem, network (and offline) sources
 - Rule-based correlation into a multi-relationship graph
-- Suspicious pattern detection (“Needs attention”)
+- Suspicious pattern detection (“Needs attention”) using graph and per-event rules
 - Incident reconstruction as connected activity stories
 - Event classification (user / background / correlated / etc.)
 
 ### Offline Investigation
-- Import preserved evidence (JSON, CSV, logs, and related formats)
+- Import preserved evidence (JSON, CSV, logs, Sysmon/Winlogbeat JSON, and related formats)
 - Offline parse → normalize → graph → incidents
 - Same dashboard views for imported cases
 
@@ -67,6 +68,34 @@ Forensic evidence pipeline:
 - Incident Summary and Event Details
 - Evidence Integrity tab with status legend
 - First-run quick tour
+
+## Suspicious Activity Rules
+
+Findings appear under **Needs attention**. Severity: **High** (score ≥ 0.8), **Medium** (≥ 0.5), otherwise Low. Rules are deterministic (no machine learning) and live in `core/services/suspicious.py`.
+
+**Graph rules** (use links between files, programs and addresses):
+
+| Rule | Score | Triggers when |
+|------|-------|---------------|
+| Network Execution | 0.85 | A newly created file is run and then connects to the network |
+| Unusual Directory Execution | 0.70 | A new file is run from `AppData`, `Temp`, `Tmp`, `Downloads`, `$Recycle.Bin` or `Users\Public` |
+| Rapid Execution | 0.40 | A new file is run within 5 minutes of being created (elsewhere) |
+| Built-in Tool Contacting Internet | 0.60–0.75 | certutil, bitsadmin, mshta, rundll32, regsvr32, wscript/cscript or PowerShell connects to a public IP |
+| Renamed Program Copy | 0.70 | The same executable (identical SHA-256) runs under two different names |
+
+**Event rules** (use details of a single event):
+
+| Rule | Score | Triggers when |
+|------|-------|---------------|
+| Suspicious Program Launch | 0.70–0.85 | Office, a PDF reader, a browser or a script host starts cmd, PowerShell, mshta, certutil, etc. |
+| Disguised System Program | 0.80 | `svchost.exe`, `lsass.exe`, `explorer.exe` etc. run from outside the Windows folder |
+| Obfuscated PowerShell | 0.60–0.95 | Encoded command, download-and-run, or Base64 decoding; hidden window + policy bypass only counts when both appear |
+| Startup Persistence / Autorun Registry Change | 0.75 | A file is added to the Startup folder, or a Run/RunOnce/Winlogon/IFEO registry key changes |
+| Disguised Executable | 0.75 | Double extension (`invoice.pdf.exe`) or right-to-left-override file names |
+| Risky Script File | 0.55 | `.js`, `.vbs`, `.hta`, `.scr` and similar files appear in Downloads or Desktop |
+| Suspicious Network Port | 0.60 | Non-loopback connection on a known attack/backdoor port (4444, 1337, 31337, IRC, Tor, …) |
+
+Common legitimate activity is deliberately excluded, e.g. Explorer starting cmd, `-ExecutionPolicy Bypass` on its own, genuine `C:\Windows\System32` programs, scripts in project folders, and local-network connections by built-in tools.
 
 ## System Architecture
 
@@ -213,6 +242,8 @@ python test_phase1.py
 python test_fs.py
 python test_offline_analysis.py
 python test_sysmon_adapter.py
+python test_csv_and_imports.py
+python test_suspicious_rules.py   # detection rules + false-positive checks
 ```
 
 ## Known Notes and Limitations
@@ -222,6 +253,10 @@ python test_sysmon_adapter.py
 - Full network PID mapping on Windows may require elevated privileges  
 - Large graphs can be heavy; Simple view and debouncing reduce UI freeze risk  
 - Collectors watch **this PC only** — not remote endpoints  
+- Live event-rule findings are kept in memory (up to 2,000) and are not restored after restart; offline analysis recomputes them  
+- Some findings (e.g. a registry key or Startup file) have no graph node, so they appear in **Needs attention** but not in the graph filter  
+- Live correlation uses a 2-minute window, so "Renamed Program Copy" only catches copies run close together  
+- Rule-based detection flags known patterns only; it is not antivirus and can miss novel techniques  
 
 ## Roadmap (planned)
 

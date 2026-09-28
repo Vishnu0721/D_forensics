@@ -98,7 +98,7 @@ class EvidenceGraph:
             snap.add_nodes_from((n, dict(d)) for n, d in self.graph.nodes(data=True))
             for u, v, k, d in self.graph.edges(keys=True, data=True):
                 attrs = dict(d)
-                for list_key in ("evidence_ids", "reasons", "file_paths"):
+                for list_key in ("evidence_ids", "reasons", "file_paths", "origins"):
                     if list_key in attrs:
                         attrs[list_key] = list(attrs[list_key])
                 snap.add_edge(u, v, key=k, **attrs)
@@ -177,6 +177,10 @@ class EvidenceGraph:
             paths = edge_data.setdefault("file_paths", [])
             if path not in paths:
                 paths.append(path)
+        for origin in rel.get("origins", []):
+            origins = edge_data.setdefault("origins", [])
+            if origin not in origins:
+                origins.append(origin)
         diff = rel.get("time_diff_seconds")
         if diff is not None:
             current = edge_data.get("min_time_diff_seconds")

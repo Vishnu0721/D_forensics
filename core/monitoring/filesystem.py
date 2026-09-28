@@ -300,7 +300,8 @@ class FilesystemCollector(BaseCollector):
         AppData, TEMP and System32 are intentionally not watched: they change
         constantly in the background and made the whole system unresponsive.
         """
-        user_profile = os.environ.get('USERPROFILE', '')
+        # USERPROFILE only exists on Windows; the home folder has the same layout elsewhere.
+        user_profile = os.environ.get('USERPROFILE', '') or os.path.expanduser('~')
         onedrive = os.environ.get('OneDrive', '')
         targets = []
         for base in (user_profile, onedrive):

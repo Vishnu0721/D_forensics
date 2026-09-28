@@ -13,7 +13,7 @@ from core.services.correlation import correlate_events
 from core.services.graph import EvidenceGraph
 from core.services.suspicious import detect_suspicious_activity
 from core.services.reconstruction import reconstruct_incidents
-from core.services.classification import ClassificationEngine
+from core.services.classification import ClassificationEngine, annotate_origins
 
 
 ProgressCallback = Optional[Callable[[str], None]]
@@ -168,6 +168,7 @@ def run_offline_analysis(
             result.relationships = rels
 
             if rels:
+                annotate_origins(rels, events_sorted)
                 graph_db.populate_from_correlations(rels)
             _emit(progress_cb, f"Correlation complete: {len(rels)} relationships")
         else:

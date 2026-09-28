@@ -87,7 +87,12 @@ def evaluate():
         
         # Collect metrics
         num_relations = graph.number_of_edges()
-        timeline_acc = "100%" if num_relations == scenario["expected_relations"] else f"{round(num_relations / scenario['expected_relations'] * 100)}%"
+        expected = scenario["expected_relations"]
+        # found/expected is not an accuracy once extra relationships are found, so report both counts.
+        if num_relations == expected:
+            timeline_acc = "100%"
+        else:
+            timeline_acc = f"{num_relations} found / {expected} expected ({num_relations - expected:+d})"
         
         # Manual baseline estimate (reading raw logs)
         manual_time = f"{len(scenario['events']) * 2} minutes"

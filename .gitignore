@@ -26,6 +26,10 @@ htmlcov/
 # Database and local data
 forensics.db
 *.db
+# SQLite WAL-mode side files (exist while the app is running)
+*.db-wal
+*.db-shm
+*.db-journal
 data/evidence/
 data/*_graph.json
 data/*_graph.json.tmp

@@ -373,9 +373,10 @@ class InteractiveGraphWidget(QWidget):
 
         controls.addWidget(QLabel("  Filter:"))
         self.filter_combo = QComboBox()
+        # Every link is "linked activity", so that option would just repeat "All links".
         self.filter_combo.addItems([
             "All links", "Needs attention", "Part of an incident",
-            "User actions", "Background noise", "Linked activity", "Unclear"
+            "User actions", "Background noise", "Unclear"
         ])
         self.filter_combo.setCurrentText("All links")
         self.filter_combo.currentTextChanged.connect(self.on_filter_changed)
@@ -506,7 +507,6 @@ class InteractiveGraphWidget(QWidget):
             "Part of an incident": "INCIDENT RELATED",
             "User actions": "USER ACTIVITY",
             "Background noise": "BACKGROUND",
-            "Linked activity": "CORRELATED",
             "Unclear": "UNKNOWN",
         }
         key = friendly_map.get(filter_text, filter_text)
@@ -518,18 +518,30 @@ class InteractiveGraphWidget(QWidget):
             for inc in cached_incidents:
                 for node in inc["nodes"]:
                     nodes_to_keep.add(node["id"] if isinstance(node, dict) else node)
-        elif key in ("USER ACTIVITY", "BACKGROUND", "CORRELATED", "UNKNOWN"):
+        elif key in ("USER ACTIVITY", "BACKGROUND", "UNKNOWN"):
             target = {
                 "USER ACTIVITY": "USER_ACTIVITY",
                 "BACKGROUND": "BACKGROUND_ACTIVITY",
-                "CORRELATED": "CORRELATED_ACTIVITY",
                 "UNKNOWN": "UNKNOWN",
             }[key]
-            for u, v, data in nx_graph.edges(data=True):
-                ev_ids = data.get("evidence_ids", [])
-                if any(evidence_classifications.get(eid) == target for eid in ev_ids):
-                    nodes_to_keep.add(u)
-                    nodes_to_keep.add(v)
+            # Origins are recorded on the link when it is created. Links saved before that
+            # existed fall back to the per-event labels the dashboard assigned on arrival.
+            matching_edges = []
+            if nx_graph.is_multigraph():
+                edge_iter = nx_graph.edges(keys=True, data=True)
+            else:
+                edge_iter = ((u, v, None, d) for u, v, d in nx_graph.edges(data=True))
+            for u, v, k, data in edge_iter:
+                origins = data.get("origins")
+                if origins is not None:
+                    matches = target in origins
+                else:
+                    matches = any(evidence_classifications.get(eid) == target
+                                  for eid in data.get("evidence_ids", []))
+                if matches:
+                    matching_edges.append((u, v, k) if k is not None else (u, v))
+            # Only the matching links: a node can also have links of other kinds.
+            return nx_graph.edge_subgraph(matching_edges)
         else:
             return nx_graph
 
@@ -676,15 +688,23 @@ class InteractiveGraphWidget(QWidget):
         filtered_graph = self.filter_graph(
             nx_graph, cached_suspicious, cached_incidents, evidence_classifications
         )
+        had_links_before_collapse = filtered_graph.number_of_edges() > 0
         filtered_graph = self._collapse_simple(filtered_graph)
         self._update_summary(filtered_graph)
 
         if filtered_graph.number_of_edges() == 0 or filtered_graph.number_of_nodes() == 0:
             self._clear_scene()
-            self.empty_label.setText(
-                "No links match this filter.\n\n"
-                "Choose “All links” or switch to Simple view."
-            )
+            if self.simple_mode and had_links_before_collapse:
+                self.empty_label.setText(
+                    "The matching links are between processes of the same program,\n"
+                    "which Simple view merges into one circle.\n\n"
+                    "Switch View to “Detailed” to see them."
+                )
+            else:
+                self.empty_label.setText(
+                    "No links match this filter.\n\n"
+                    "Choose “All links” to see everything."
+                )
             self.empty_label.show()
             self.empty_label.resize(self.view.size())
             return

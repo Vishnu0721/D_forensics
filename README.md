@@ -17,6 +17,7 @@ Clarity and stability improvements on top of the original pipeline:
 - **Quick tour** (Help → Quick tour) for first-time users
 - Performance hardening: interruptible collectors, SQLite WAL, debounced graph updates, layout off the UI thread
 - **Expanded suspicious-activity detection**: 13 rules (was 3), covering malicious document launches, disguised system programs, built-in tools abused for downloads, obfuscated PowerShell, startup persistence, disguised files and attack ports (see [Suspicious Activity Rules](#suspicious-activity-rules))
+- **Reliable Evidence Graph filters**: each link records who caused it (user app, background service or unknown), so *User actions*, *Background noise* and *Unclear* show the right links, also after a restart (see [Evidence Graph Filters](#evidence-graph-filters))
 
 > A separate **light-theme web app** is planned (same repo, later). The desktop app remains the supported UI today.
 
@@ -97,6 +98,23 @@ Findings appear under **Needs attention**. Severity: **High** (score ≥ 0.8), *
 
 Common legitimate activity is deliberately excluded, e.g. Explorer starting cmd, `-ExecutionPolicy Bypass` on its own, genuine `C:\Windows\System32` programs, scripts in project folders, and local-network connections by built-in tools.
 
+**What is not detected:** the app sees which program connects to which IP address and port, not web pages, URLs or domain names (HTTPS traffic is encrypted). Visiting a suspicious website is only flagged if it leads to activity on the PC, for example a disguised or script file landing in Downloads, the browser starting cmd/PowerShell, or a downloaded file being run.
+
+## Evidence Graph Filters
+
+| Filter | Shows |
+|--------|-------|
+| All links | Everything in the graph |
+| Needs attention | Programs, files and addresses involved in a suspicious finding |
+| Part of an incident | Members of a reconstructed incident |
+| User actions | Links caused by interactive apps running as the user (browsers, Explorer, Office, shells), e.g. Chrome contacting a website |
+| Background noise | Links caused by background services or system accounts (svchost, SYSTEM, …) |
+| Unclear | Links whose cause cannot be attributed reliably (e.g. apps not on the interactive list) |
+
+- The origin is stored on each link when it is created and saved with the graph. Graphs saved by older versions fall back to the labels assigned during the current session.
+- **Simple view** merges all processes of one program into a single circle, so links *between* processes of the same program (e.g. Chrome's helper processes sharing one executable) are hidden; the graph says so and suggests **Detailed** view.
+- There is no "Linked activity" graph filter: every link is linked activity, so it would equal *All links*. The Activity tab keeps that filter, where it is meaningful.
+
 ## System Architecture
 
 ```text
@@ -160,15 +178,17 @@ pip install -r requirements.txt
 | psutil | Process & network telemetry |
 | watchdog | Filesystem events |
 | pandas / pydantic | Parsing & validation |
-| pywin32 | Windows helpers |
+| pywin32 | Windows helpers (installed on Windows only) |
 
 `neo4j` is listed for optional future use; the current graph engine is **NetworkX**.
+
+**Platform:** built and tested on **Windows 10/11**, where all collectors and detection rules apply. It also starts on Linux/macOS (the filesystem collector watches `~/Downloads`, `~/Desktop` and `~/Documents`), but most detection rules target Windows behaviour.
 
 ## Installation and Setup
 
 ```bash
-git clone https://github.com/Kamalika-k/digital_forensics.git
-cd digital_forensics
+git clone https://github.com/Vishnu0721/D_forensics.git
+cd D_forensics
 python -m venv venv
 # Windows:
 venv\Scripts\activate
@@ -220,6 +240,8 @@ Graph cache: `data/<case_id>_graph.json`
 
 These paths (and `forensics.db`) are always relative to the project folder, not the folder you launch from. Set `FORENSICS_DATA_DIR` to store runtime data elsewhere (the tests use a temporary folder), and `FORENSICS_DEBUG=1` to print per-event diagnostics.
 
+All runtime data (`forensics.db` and its `-wal`/`-shm` files, `data/evidence/`, graph caches) is git-ignored and created automatically on first start. To start from a clean slate, close the app and delete `forensics.db` and the `data/` folder.
+
 ## Data Model
 
 | Table | Purpose |
@@ -231,11 +253,7 @@ These paths (and `forensics.db`) are always relative to the project folder, not 
 
 ## Testing
 
-```bash
-python -m pytest
-```
-
-Targeted scripts:
+The test scripts are the full suite. Each uses a temporary data folder, so your real `forensics.db` and evidence are never touched (`test_fs.py` briefly creates files in `scratch/`, which is git-ignored):
 
 ```bash
 python test_phase1.py
@@ -244,7 +262,11 @@ python test_offline_analysis.py
 python test_sysmon_adapter.py
 python test_csv_and_imports.py
 python test_suspicious_rules.py   # detection rules + false-positive checks
+python test_graph_filters.py      # Evidence Graph filters (User actions / Background / Unclear)
+python evaluation/run_evaluation.py
 ```
+
+`python -m pytest` also works (install `pytest` separately), but it only collects the `test_*` functions; the scripts above cover more.
 
 ## Known Notes and Limitations
 
@@ -255,7 +277,8 @@ python test_suspicious_rules.py   # detection rules + false-positive checks
 - Collectors watch **this PC only** — not remote endpoints  
 - Live event-rule findings are kept in memory (up to 2,000) and are not restored after restart; offline analysis recomputes them  
 - Some findings (e.g. a registry key or Startup file) have no graph node, so they appear in **Needs attention** but not in the graph filter  
-- Live correlation uses a 2-minute window, so "Renamed Program Copy" only catches copies run close together  
+- "Renamed Program Copy" relies on same-hash links, which only live monitoring creates (within a 2-minute window); offline imports do not produce them  
+- Web pages, URLs and domain names are not monitored (see [Suspicious Activity Rules](#suspicious-activity-rules))  
 - Rule-based detection flags known patterns only; it is not antivirus and can miss novel techniques  
 
 ## Roadmap (planned)

@@ -344,6 +344,8 @@ class CorrelationWorker(QObject):
             new_findings = self._collect_event_findings(events)
 
             if all_new_relationships:
+                from core.services.classification import annotate_origins
+                annotate_origins(all_new_relationships, list(events) + history)
                 self.graph_db.populate_from_correlations(all_new_relationships)
                 self.correlations_found.emit(all_new_relationships)
             if all_new_relationships or new_findings:
